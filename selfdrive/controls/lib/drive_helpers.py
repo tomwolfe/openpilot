@@ -40,7 +40,7 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, b
 
 
 def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.05):
-  if len(speeds) == len(t_idxs):
+  if len(speeds) == len(t_idxs) and len(accels) == len(t_idxs):
     v_now = speeds[0]
     a_now = accels[0]
     v_target = np.interp(action_t, t_idxs, speeds)
@@ -60,6 +60,9 @@ def curv_from_psis(psi_target, psi_rate, vego, action_t):
   return 2*curv_from_psi - psi_rate / vego
 
 def get_curvature_from_plan(yaws, yaw_rates, t_idxs, vego, action_t):
+  # Validate array lengths match t_idxs
+  if len(yaws) != len(t_idxs) or len(yaw_rates) != len(t_idxs):
+    return 0.0
   psi_target = np.interp(action_t, t_idxs, yaws)
   psi_rate = yaw_rates[0]
   return curv_from_psis(psi_target, psi_rate, vego, action_t)
