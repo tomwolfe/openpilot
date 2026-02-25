@@ -56,6 +56,9 @@ def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.
 
 def curv_from_psis(psi_target, psi_rate, vego, action_t):
   vego = np.clip(vego, MIN_SPEED, np.inf)
+  # Handle case where action_t is 0 or very small to avoid division by zero
+  if action_t <= 0:
+    return -psi_rate / vego
   curv_from_psi = psi_target / (vego * action_t)
   return 2*curv_from_psi - psi_rate / vego
 
