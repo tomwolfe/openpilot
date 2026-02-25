@@ -4,8 +4,6 @@ Tests for enhanced simulator with photorealistic rendering.
 Run with: pytest tools/sim/tests/test_enhanced_simulator.py
 """
 
-import pytest
-
 
 class TestEnhancedSimulatorConfig:
   """Test enhanced simulator configuration options."""

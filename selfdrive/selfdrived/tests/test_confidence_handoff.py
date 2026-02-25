@@ -4,7 +4,6 @@ Tests for confidence-triggered handoff and epistemic uncertainty.
 Run with: pytest selfdrive/selfdrived/tests/test_confidence_handoff.py
 """
 
-import pytest
 from cereal import log
 
 ConfidenceClass = log.ModelDataV2.ConfidenceClass
