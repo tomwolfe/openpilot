@@ -57,7 +57,7 @@ def create_map(track_size=60, randomize=False):
       straight_block(track_size),
       curve_block(curve_len, 90),
     ]
-  
+
   return dict(
     type=MapGenerateMethod.PG_MAP_FILE,
     lane_num=2,
@@ -117,13 +117,13 @@ class MetaDriveBridge(SimulatorBridge):
       light_mode=self.weather if self.weather else 'daytime',
       skybox_mode=self.weather if self.weather else 'default',
     )
-    
+
     # Add weather effects if specified
     if self.weather == 'rain':
       config['weather'] = 'rain'
     elif self.weather == 'fog':
       config['weather'] = 'fog'
-    
+
     # High quality rendering options
     if self.high_quality:
       config.update(dict(

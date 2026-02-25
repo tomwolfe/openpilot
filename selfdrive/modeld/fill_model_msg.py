@@ -166,21 +166,22 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   # Aleatoric uncertainty score (from disengage probability buffer)
   aleatoric_score = 0.
   for i in range(ModelConstants.DISENGAGE_WIDTH):
-    aleatoric_score += publish_state.disengage_buffer[i*ModelConstants.DISENGAGE_WIDTH+ModelConstants.DISENGAGE_WIDTH-1-i].item() / ModelConstants.DISENGAGE_WIDTH
-  
+    idx = i*ModelConstants.DISENGAGE_WIDTH+ModelConstants.DISENGAGE_WIDTH-1-i
+    aleatoric_score += publish_state.disengage_buffer[idx].item() / ModelConstants.DISENGAGE_WIDTH
+
   # Epistemic uncertainty (from MC Dropout variance)
   epistemic_uncertainty = net_output_data.get('epistemic_uncertainty', 0.0)
-  
+
   # Combine uncertainties with weighted sum
   # Epistemic uncertainty is normalized: variance > 0.1 indicates high uncertainty
   epistemic_score = min(epistemic_uncertainty / 0.1, 1.0) * ModelConstants.RYG_YELLOW
-  
+
   # Combined confidence score
   if ENABLE_MC_DROPOUT and epistemic_uncertainty > 0:
     combined_score = (1 - ModelConstants.EPISTEMIC_WEIGHT) * aleatoric_score + ModelConstants.EPISTEMIC_WEIGHT * epistemic_score
   else:
     combined_score = aleatoric_score
-  
+
   if combined_score < ModelConstants.RYG_GREEN:
     modelV2.confidence = ConfidenceClass.green
   elif combined_score < ModelConstants.RYG_YELLOW:

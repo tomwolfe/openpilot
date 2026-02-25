@@ -29,7 +29,6 @@ from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import read_file_chunked
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
-from tinygrad.nn import dropout
 
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
@@ -231,22 +230,21 @@ class ModelState:
     # MC Dropout for epistemic uncertainty estimation
     if ENABLE_MC_DROPOUT:
       # Run policy multiple times with dropout enabled to estimate epistemic uncertainty
-      from tinygrad.nn import dropout
       policy_outputs_samples = []
-      
+
       for _ in range(ModelConstants.MC_DROPOUT_SAMPLES):
         # Enable dropout during inference for MC Dropout
         self.policy_output = self.policy_run(**self.policy_inputs, training=True).contiguous().realize().uop.base.buffer.numpy().flatten()
         policy_outputs_samples.append(self.policy_output.copy())
-      
+
       # Compute mean and variance across samples
       policy_outputs_stack = np.stack(policy_outputs_samples, axis=0)
       self.policy_output = np.mean(policy_outputs_stack, axis=0)
       policy_output_variance = np.var(policy_outputs_stack, axis=0)
-      
+
       # Parse mean outputs
       policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
-      
+
       # Compute epistemic uncertainty from variance of key outputs
       # Focus on plan and meta outputs which are most safety-critical
       plan_variance = np.mean(policy_output_variance[self.policy_output_slices['plan']])
@@ -260,7 +258,7 @@ class ModelState:
 
     combined_outputs_dict = {**vision_outputs_dict, **policy_outputs_dict}
     combined_outputs_dict['epistemic_uncertainty'] = epistemic_uncertainty
-    
+
     if SEND_RAW_PRED:
       combined_outputs_dict['raw_pred'] = np.concatenate([self.vision_output.copy(), self.policy_output.copy()])
 
