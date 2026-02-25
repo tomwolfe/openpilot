@@ -75,9 +75,12 @@ class VehicleModelPlanner:
 
     # Extract desired curvature from model
     # Model outputs orientation rate, convert to curvature
+    # Convert capnp lists to numpy arrays for proper slicing
+    yaws = np.array(model_output.orientation.z)
+    yaw_rates = np.array(model_output.orientationRate.z)
     desired_curvature = get_curvature_from_plan(
-      model_output['plan'][0, :, ModelConstants.Plan.T_FROM_CURRENT_EULER][:, 2],
-      model_output['plan'][0, :, ModelConstants.Plan.ORIENTATION_RATE][:, 2],
+      yaws,
+      yaw_rates,
       ModelConstants.T_IDXS,
       v_ego,
       lat_delay
@@ -114,9 +117,12 @@ class VehicleModelPlanner:
       should_stop: Whether vehicle should come to stop
     """
     # Get acceleration from model plan
+    # Convert capnp lists to numpy arrays for proper slicing
+    velocities = np.array(model_output.velocity.x)
+    accelerations = np.array(model_output.acceleration.x)
     desired_accel, should_stop = get_accel_from_plan(
-      model_output['plan'][0, :, ModelConstants.Plan.VELOCITY][:, 0],
-      model_output['plan'][0, :, ModelConstants.Plan.ACCELERATION][:, 0],
+      velocities,
+      accelerations,
       ModelConstants.T_IDXS,
       action_t=long_delay
     )
