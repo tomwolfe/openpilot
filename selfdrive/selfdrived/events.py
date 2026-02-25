@@ -884,6 +884,16 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.PERMANENT: modeld_lagging_alert,
   },
 
+  # Model confidence is computed from disengage probability buffer and epistemic
+  # uncertainty. When confidence is red, the model is uncertain about its predictions
+  # due to OOD inputs, poor visibility, or other factors. This triggers immediate
+  # handoff to ensure safety.
+  EventName.modelUncertain: {
+    ET.SOFT_DISABLE: soft_disable_alert("Model Uncertainty High"),
+    ET.NO_ENTRY: NoEntryAlert("Model Uncertainty High"),
+    ET.PERMANENT: NormalPermanentAlert("Model Uncertainty High", "Vision degraded - disengage soon"),
+  },
+
   # Besides predicting the path, lane lines and lead car data the model also
   # predicts the current velocity and rotation speed of the car. If the model is
   # very uncertain about the current velocity while the car is moving, this

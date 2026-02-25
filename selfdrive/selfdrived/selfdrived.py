@@ -233,6 +233,19 @@ class SelfdriveD:
       if self.sm['driverAssistance'].leftLaneDeparture or self.sm['driverAssistance'].rightLaneDeparture:
         self.events.add(EventName.ldw)
 
+    # Model confidence check - trigger handoff when model is uncertain
+    # Confidence is computed from disengage probability buffer and epistemic uncertainty
+    if self.sm.valid['modelV2'] and self.sm['modelV2'].confidence == log.ModelDataV2.ConfidenceClass.red:
+      # Require 3 consecutive red frames to avoid spurious handoffs
+      if not hasattr(self, 'red_confidence_counter'):
+        self.red_confidence_counter = 0
+      self.red_confidence_counter += 1
+      if self.red_confidence_counter >= 3:
+        self.events.add(EventName.modelUncertain)
+    else:
+      if hasattr(self, 'red_confidence_counter'):
+        self.red_confidence_counter = 0
+
     # ******************************************************************************************
     #  NOTE: To fork maintainers.
     #  Disabling or nerfing safety features will get you and your users banned from our servers.

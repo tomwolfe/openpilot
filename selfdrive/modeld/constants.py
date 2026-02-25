@@ -61,6 +61,10 @@ class ModelConstants:
   RYG_GREEN = 0.01165
   RYG_YELLOW = 0.06157
 
+  # MC Dropout for epistemic uncertainty
+  MC_DROPOUT_SAMPLES = 5  # Number of forward passes for uncertainty estimation
+  EPISTEMIC_WEIGHT = 0.5  # Weight for epistemic uncertainty in combined confidence
+
   POLY_PATH_DEGREE = 4
 
 # model outputs slices

@@ -10,13 +10,13 @@ from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority
 from openpilot.common.swaglog import cloudlog
 
 from opendbc.car.car_helpers import interfaces
-from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.controls.lib.vehicle_model_planner import VehicleModelPlanner
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
@@ -49,7 +49,7 @@ class Controls:
     self.calibrated_pose: Pose | None = None
 
     self.LoC = LongControl(self.CP)
-    self.VM = VehicleModel(self.CP)
+    self.VMP = VehicleModelPlanner(self.CP)  # Vehicle-specific dynamics planner
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       self.LaC = LatControlAngle(self.CP, self.CI, DT_CTRL)
@@ -69,14 +69,15 @@ class Controls:
   def state_control(self):
     CS = self.sm['carState']
 
-    # Update VehicleModel
+    # Update VehicleModel parameters from live estimation
     lp = self.sm['liveParameters']
     x = max(lp.stiffnessFactor, 0.1)
     sr = max(lp.steerRatio, 0.1)
-    self.VM.update_params(x, sr)
+    self.VMP.update_vehicle_params(x, sr)
 
+    # Get current curvature from vehicle state
     steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
-    self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
+    self.curvature = self.VMP.get_current_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
 
     # Update Torque Params
     if self.CP.lateralTuning.which() == 'torque':
@@ -115,13 +116,14 @@ class Controls:
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
 
     # Steering PID loop and lateral MPC
-    # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+    # Use VehicleModelPlanner for curvature computation (vehicle-specific dynamics)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    self.desired_curvature, curvature_limited = self.VMP.compute_desired_curvature(
+      model_v2, CS.vEgo, lp.roll, self.desired_curvature, lat_delay, CC.latActive
+    )
 
     actuators.curvature = self.desired_curvature
-    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VMP.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
                                                        curvature_limited, lat_delay)
     actuators.torque = float(steer)

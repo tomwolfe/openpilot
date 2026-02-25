@@ -5,6 +5,7 @@ from cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
+ENABLE_MC_DROPOUT = os.getenv('ENABLE_MC_DROPOUT', '0') == '1'  # Enable epistemic uncertainty
 
 ConfidenceClass = log.ModelDataV2.ConfidenceClass
 
@@ -149,6 +150,7 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   meta.hardBrakePredicted = hard_brake_predicted.item()
 
   # confidence
+  # Combine aleatoric uncertainty (from disengage probs) with epistemic uncertainty (from MC Dropout)
   if vipc_frame_id % (2*ModelConstants.MODEL_RUN_FREQ) == 0:
     # any disengage prob
     brake_disengage_probs = net_output_data['meta'][0,Meta.BRAKE_DISENGAGE]
@@ -161,12 +163,27 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
     publish_state.disengage_buffer[:-ModelConstants.DISENGAGE_WIDTH] = publish_state.disengage_buffer[ModelConstants.DISENGAGE_WIDTH:]
     publish_state.disengage_buffer[-ModelConstants.DISENGAGE_WIDTH:] = ind_disengage_probs
 
-  score = 0.
+  # Aleatoric uncertainty score (from disengage probability buffer)
+  aleatoric_score = 0.
   for i in range(ModelConstants.DISENGAGE_WIDTH):
-    score += publish_state.disengage_buffer[i*ModelConstants.DISENGAGE_WIDTH+ModelConstants.DISENGAGE_WIDTH-1-i].item() / ModelConstants.DISENGAGE_WIDTH
-  if score < ModelConstants.RYG_GREEN:
+    aleatoric_score += publish_state.disengage_buffer[i*ModelConstants.DISENGAGE_WIDTH+ModelConstants.DISENGAGE_WIDTH-1-i].item() / ModelConstants.DISENGAGE_WIDTH
+  
+  # Epistemic uncertainty (from MC Dropout variance)
+  epistemic_uncertainty = net_output_data.get('epistemic_uncertainty', 0.0)
+  
+  # Combine uncertainties with weighted sum
+  # Epistemic uncertainty is normalized: variance > 0.1 indicates high uncertainty
+  epistemic_score = min(epistemic_uncertainty / 0.1, 1.0) * ModelConstants.RYG_YELLOW
+  
+  # Combined confidence score
+  if ENABLE_MC_DROPOUT and epistemic_uncertainty > 0:
+    combined_score = (1 - ModelConstants.EPISTEMIC_WEIGHT) * aleatoric_score + ModelConstants.EPISTEMIC_WEIGHT * epistemic_score
+  else:
+    combined_score = aleatoric_score
+  
+  if combined_score < ModelConstants.RYG_GREEN:
     modelV2.confidence = ConfidenceClass.green
-  elif score < ModelConstants.RYG_YELLOW:
+  elif combined_score < ModelConstants.RYG_YELLOW:
     modelV2.confidence = ConfidenceClass.yellow
   else:
     modelV2.confidence = ConfidenceClass.red
