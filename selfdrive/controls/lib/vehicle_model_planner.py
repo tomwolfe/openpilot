@@ -49,6 +49,9 @@ class VehicleModelPlanner:
     self._a_total_max_v = [1.7, 3.2]  # m/s^2
     self._a_total_max_bp = [20., 40.]  # m/s
 
+    # Initialize curvature state
+    self.curvature = 0.0
+
   def compute_desired_curvature(self, model_output, v_ego, roll, prev_curvature,
                                  lat_delay, active=True):
     """
@@ -85,7 +88,10 @@ class VehicleModelPlanner:
       v_ego, prev_curvature, desired_curvature, roll
     )
 
-    return float(desired_curvature), curvature_limited
+    # Store curvature state for next iteration
+    self.curvature = float(desired_curvature)
+
+    return self.curvature, curvature_limited
 
   def compute_desired_acceleration(self, model_output, v_ego, v_cruise,
                                     longitudinal_active, reset_state,
