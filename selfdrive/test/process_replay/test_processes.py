@@ -7,6 +7,10 @@ from collections import defaultdict
 from tqdm import tqdm
 from typing import Any
 
+# Import cereal first to ensure car schema is loaded before opendbc
+# This avoids duplicate ID errors when both schemas have the same ID
+from cereal import car as cereal_car  # noqa: F401
+
 from opendbc.car.car_helpers import interface_names
 from openpilot.common.git import get_commit
 from openpilot.tools.lib.openpilotci import get_url

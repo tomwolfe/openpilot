@@ -228,13 +228,13 @@ class CarInterface(CarInterfaceBase):
     
     # Get state from simulator
     CS = self.simulator_state.get_state()
-    
+
     return CS
-  
-  def apply(self, CC: car.CarControl, now_nanos: int | None = None) -> tuple[structs.CarControl.ActuatorsT, list[CanData]]:
+
+  def apply(self, CC: car.CarControl, now_nanos: int | None = None) -> tuple[structs.CarControl.Actuators, list[CanData]]:
     """
     Apply car control commands.
-    
+
     In simulation, we send control commands back to the simulator world
     via the shared state rather than actual CAN messages.
     """
