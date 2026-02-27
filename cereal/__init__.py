@@ -1,18 +1,22 @@
 import os
 import capnp
+import sys
 from importlib.resources import as_file, files
 
 capnp.remove_import_hook()
 
 with as_file(files("cereal")) as fspath:
   CEREAL_PATH = fspath.as_posix()
-  log = capnp.load(os.path.join(CEREAL_PATH, "log.capnp"))
-  custom = capnp.load(os.path.join(CEREAL_PATH, "custom.capnp"))
 
-# car schemas are sourced from opendbc package
-# try to import from installed opendbc first, then fall back to local path
-try:
-  from opendbc.car.structs import car as opendbc_car
-  car = opendbc_car
-except ImportError:
-  car = capnp.load(os.path.join(CEREAL_PATH, "car.capnp"))
+# Pre-load c++.capnp to avoid duplicate ID errors when loading other schemas
+# that import it. This is a workaround for pycapnp not properly deduplicating
+# imports when multiple schemas import the same file.
+_ = capnp.load(os.path.join(CEREAL_PATH, "include/c++.capnp"))
+
+# Load car schema from cereal directory first (before importing opendbc)
+# This ensures that the path used for car.capnp is consistent
+car = capnp.load(os.path.join(CEREAL_PATH, "car.capnp"))
+
+# Now load log and custom schemas
+log = capnp.load(os.path.join(CEREAL_PATH, "log.capnp"))
+custom = capnp.load(os.path.join(CEREAL_PATH, "custom.capnp"))
