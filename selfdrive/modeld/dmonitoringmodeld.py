@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
-from openpilot.system.hardware import TICI
-os.environ['DEV'] = 'QCOM' if TICI else 'CPU'
+from openpilot.system.hardware import HARDWARE
+os.environ['DEV'] = 'QCOM' if HARDWARE.capabilities.has_gpu_acceleration else 'CPU'
 from tinygrad.tensor import Tensor
 import time
 import pickle

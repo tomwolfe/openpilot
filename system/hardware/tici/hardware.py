@@ -10,7 +10,7 @@ from pathlib import Path
 from cereal import log
 from openpilot.common.utils import sudo_read, sudo_write
 from openpilot.common.gpio import gpio_set, gpio_init, get_irqs_for_action
-from openpilot.system.hardware.base import HardwareBase, LPABase, ThermalConfig, ThermalZone
+from openpilot.system.hardware.base import HardwareBase, LPABase, ThermalConfig, ThermalZone, DeviceType
 from openpilot.system.hardware.tici import iwlist
 from openpilot.system.hardware.tici.lpa import TiciLPA
 from openpilot.system.hardware.tici.pins import GPIO
@@ -79,6 +79,33 @@ def get_device_type():
   return model.split('comma ')[-1]
 
 class Tici(HardwareBase):
+  def __init__(self):
+    super().__init__()
+    # Set up capabilities for TICI hardware
+    device_type = self.get_device_type()
+    is_mici = (device_type == "mici")
+    
+    # Core capabilities - TICI has all the specialized hardware
+    self._capabilities._has_managed_fan = True
+    self._capabilities._has_internal_panda = True
+    self._capabilities._has_modem = True
+    self._capabilities._has_display = True
+    self._capabilities._has_touchscreen = True
+    self._capabilities._has_ir_camera = not is_mici  # Only tizi has IR
+    self._capabilities._has_egl_support = True
+    self._capabilities._has_gpu_acceleration = True
+    self._capabilities._has_power_monitoring = True
+    self._capabilities._has_thermal_zones = True
+    self._capabilities._has_screen_brightness_control = True
+    self._capabilities._has_power_save_mode = True
+    self._capabilities._has_lpa = True
+    self._capabilities._has_amplifier = not is_mici
+    
+    # System capabilities
+    self._capabilities._requires_realtime = True
+    self._capabilities._has_core_affinity_control = True
+    self._capabilities._is_agnos = os.path.isfile('/AGNOS')
+  
   @cached_property
   def bus(self):
     import dbus
@@ -104,6 +131,12 @@ class Tici(HardwareBase):
 
   def get_device_type(self):
     return get_device_type()
+
+  def get_device_type_enum(self) -> DeviceType:
+    device_type = self.get_device_type()
+    if device_type == "mici":
+      return DeviceType.MICI
+    return DeviceType.TICI
 
   def reboot(self, reason=None):
     subprocess.check_output(["sudo", "reboot"])

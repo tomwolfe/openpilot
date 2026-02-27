@@ -12,7 +12,7 @@ from cereal import messaging
 from openpilot.common.time_helpers import system_time_valid
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.hardware import TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.common.gpio import gpio_init, gpio_set
 from openpilot.system.hardware.tici.pins import GPIO
 
@@ -26,8 +26,10 @@ UBLOX_BACKUP_RESTORE_MSG = b"\xb5\x62\x09\x14\x08\x00\x03"
 UBLOX_ASSIST_ACK = b"\xb5\x62\x13\x60\x08\x00"
 
 def set_power(enabled: bool) -> None:
-  gpio_init(GPIO.UBLOX_SAFEBOOT_N, True)
-  gpio_init(GPIO.GNSS_PWR_EN, True)
+  # Only control GPIO on hardware with modem capability
+  if HARDWARE.capabilities.has_modem:
+    gpio_init(GPIO.UBLOX_SAFEBOOT_N, True)
+    gpio_init(GPIO.GNSS_PWR_EN, True)
   gpio_init(GPIO.UBLOX_RST_N, True)
 
   gpio_set(GPIO.UBLOX_SAFEBOOT_N, True)

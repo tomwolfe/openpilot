@@ -706,8 +706,9 @@ class Setup(Widget):
 
 def main():
   config_realtime_process(0, 51)
-  # attempt to affine. AGNOS will start setup with all cores, should only fail when manually launching with screen off
-  if TICI:
+  # Attempt to affine. AGNOS will start setup with all cores, should only fail when manually launching with screen off
+  # Only on hardware with core affinity control
+  if HARDWARE.capabilities.has_core_affinity_control:
     try:
       set_core_affinity([5])
     except OSError:

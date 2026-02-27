@@ -37,6 +37,24 @@ assert arch in [
   "Darwin",   # macOS arm64 (x86 not supported)
 ]
 
+# Helper function to detect if a submodule is present as a local directory
+def has_local_submodule(name):
+  """Check if a submodule exists as a local directory for development."""
+  return os.path.isdir(Dir(f'#{name}').abspath)
+
+# Detect which submodules are present locally vs installed as packages
+OPENDBC_LOCAL = has_local_submodule('opendbc_repo')
+MSGQ_LOCAL = has_local_submodule('msgq_repo')
+PANDA_LOCAL = has_local_submodule('panda')
+REDNOSE_LOCAL = has_local_submodule('rednose_repo')
+
+# Print build configuration
+print(f"Build configuration:")
+print(f"  opendbc: {'local (opendbc_repo)' if OPENDBC_LOCAL else 'installed package'}")
+print(f"  msgq: {'local (msgq_repo)' if MSGQ_LOCAL else 'installed package'}")
+print(f"  panda: {'local (panda)' if PANDA_LOCAL else 'installed package'}")
+print(f"  rednose: {'local (rednose_repo)' if REDNOSE_LOCAL else 'installed package'}")
+
 if arch != "larch64":
   import capnproto
   import eigen
@@ -105,7 +123,7 @@ env = Environment(
   COMPILATIONDB_USE_ABSPATH=True,
   REDNOSE_ROOT="#",
   tools=["default", "cython", "compilation_db", "rednose_filter"],
-  toolpath=["#site_scons/site_tools", "#rednose_repo/site_scons/site_tools"],
+  toolpath=["#site_scons/site_tools", "#rednose_repo/site_scons/site_tools"] if REDNOSE_LOCAL else ["#site_scons/site_tools"],
 )
 
 # Arch-specific flags and paths
@@ -192,8 +210,20 @@ Export('common')
 # Enable swaglog include in submodules
 env_swaglog = env.Clone()
 env_swaglog['CXXFLAGS'].append('-DSWAGLOG="\\"common/swaglog.h\\""')
-SConscript(['msgq_repo/SConscript'], exports={'env': env_swaglog})
-SConscript(['opendbc_repo/SConscript'], exports={'env': env_swaglog})
+
+# Build msgq - local or skip if installed
+if MSGQ_LOCAL:
+  SConscript(['msgq_repo/SConscript'], exports={'env': env_swaglog})
+else:
+  # msgq is installed as a package, no SCons build needed
+  pass
+
+# Build opendbc - local or skip if installed
+if OPENDBC_LOCAL:
+  SConscript(['opendbc_repo/SConscript'], exports={'env': env_swaglog})
+else:
+  # opendbc is installed as a package, no SCons build needed
+  pass
 
 SConscript(['cereal/SConscript'])
 
@@ -202,11 +232,13 @@ messaging = [socketmaster, msgq, 'capnp', 'kj',]
 Export('messaging')
 
 
-# Build other submodules
-SConscript(['panda/SConscript'])
+# Build other submodules - local or skip if installed
+if PANDA_LOCAL:
+  SConscript(['panda/SConscript'])
 
-# Build rednose library
-SConscript(['rednose/SConscript'])
+# Build rednose library - local or skip if installed
+if REDNOSE_LOCAL:
+  SConscript(['rednose/SConscript'])
 
 # Build system services
 SConscript([

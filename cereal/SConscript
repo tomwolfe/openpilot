@@ -1,10 +1,19 @@
+import os
+
 Import('env', 'common', 'msgq')
 
 cereal_dir = Dir('.')
 gen_dir = Dir('gen')
 
 # Build cereal
-schema_files = ['log.capnp', 'car.capnp', 'legacy.capnp', 'custom.capnp']
+# car.capnp may be a symlink to opendbc_repo or may not exist if opendbc is installed
+schema_files = ['log.capnp', 'legacy.capnp', 'custom.capnp']
+
+# Check if car.capnp exists (symlinked from opendbc or present locally)
+car_capnp_path = File('car.capnp').abspath
+if os.path.exists(car_capnp_path):
+  schema_files.insert(1, 'car.capnp')  # insert after log.capnp
+
 env.Command([f'gen/cpp/{s}.c++' for s in schema_files] + [f'gen/cpp/{s}.h' for s in schema_files],
             schema_files,
             f"capnpc --src-prefix={cereal_dir.path} $SOURCES -o c++:{gen_dir.path}/cpp/")

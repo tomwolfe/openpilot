@@ -115,14 +115,14 @@ def hw_state_thread(end_event, hw_queue):
         if len(modem_temps) == 0 and prev_hw_state is not None:
           modem_temps = prev_hw_state.modem_temps
 
-        # Log modem version once
-        if AGNOS and (modem_version is None):
+        # Log modem version once on hardware with modem
+        if HARDWARE.capabilities.has_modem and (modem_version is None):
           modem_version = HARDWARE.get_modem_version()
 
           if modem_version is not None:
             cloudlog.event("modem version", version=modem_version)
 
-        if AGNOS and modem_restart_count < 3 and HARDWARE.get_modem_version() is None:
+        if HARDWARE.capabilities.has_modem and modem_restart_count < 3 and HARDWARE.get_modem_version() is None:
           # TODO: we may be able to remove this with a MM update
           # ModemManager's probing on startup can fail
           # rarely, restart the service to probe again.
@@ -324,10 +324,11 @@ def hardware_thread(end_event, hw_queue) -> None:
     set_offroad_alert_if_changed("Offroad_TemperatureTooHigh", show_alert, extra_text=extra_text)
 
     # *** registration check ***
-    if not PC:
+    # Only enforce registration on non-simulator hardware
+    if not HARDWARE.capabilities.is_simulator:
       # we enforce this for our software, but you are welcome
       # to make a different decision in your software
-      startup_conditions["registered_device"] = PC or (params.get("DongleId") != UNREGISTERED_DONGLE_ID)
+      startup_conditions["registered_device"] = HARDWARE.capabilities.is_simulator or (params.get("DongleId") != UNREGISTERED_DONGLE_ID)
 
     # Handle offroad/onroad transition
     should_start = all(onroad_conditions.values())
@@ -466,7 +467,8 @@ def main():
     threading.Thread(target=hardware_thread, args=(end_event, hw_queue)),
   ]
 
-  if TICI:
+  # Touch thread only needed on hardware with touchscreen capability
+  if HARDWARE.capabilities.has_touchscreen:
     threads.append(threading.Thread(target=touch_thread, args=(end_event,)))
 
   for t in threads:

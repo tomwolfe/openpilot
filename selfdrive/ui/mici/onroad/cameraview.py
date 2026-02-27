@@ -4,7 +4,7 @@ import pyray as rl
 
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.hardware import TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.egl import init_egl, create_egl_image, destroy_egl_image, bind_egl_image_to_texture, EGLImage
 from openpilot.system.ui.widgets import Widget
@@ -37,8 +37,8 @@ void main() {
 }
 """
 
-# Choose fragment shader based on platform capabilities
-if TICI:
+# Choose fragment shader based on EGL support capability
+if HARDWARE.capabilities.has_egl_support:
   FRAME_FRAGMENT_SHADER = """
     #version 300 es
     #extension GL_OES_EGL_image_external_essl3 : enable
@@ -137,8 +137,8 @@ class CameraView(Widget):
 
     self._placeholder_color: rl.Color | None = None
 
-    # Initialize EGL for zero-copy rendering on TICI
-    if TICI:
+    # Initialize EGL for zero-copy rendering on hardware with EGL support
+    if HARDWARE.capabilities.has_egl_support:
       if not init_egl():
         raise RuntimeError("Failed to initialize EGL")
 
@@ -188,8 +188,8 @@ class CameraView(Widget):
   def close(self) -> None:
     self._clear_textures()
 
-    # Clean up EGL texture
-    if TICI and self.egl_texture:
+    # Clean up EGL texture on hardware with EGL support
+    if HARDWARE.capabilities.has_egl_support and self.egl_texture:
       rl.unload_texture(self.egl_texture)
       self.egl_texture = None
 
@@ -263,8 +263,8 @@ class CameraView(Widget):
 
     dst_rect = rl.Rectangle(x_offset, y_offset, scale_x, scale_y)
 
-    # Render with appropriate method
-    if TICI:
+    # Render with appropriate method based on EGL support
+    if HARDWARE.capabilities.has_egl_support:
       self._render_egl(src_rect, dst_rect)
     else:
       self._render_textures(src_rect, dst_rect)
@@ -403,8 +403,8 @@ class CameraView(Widget):
       rl.unload_texture(self.texture_uv)
       self.texture_uv = None
 
-    # Clean up EGL resources
-    if TICI:
+    # Clean up EGL resources on hardware with EGL support
+    if HARDWARE.capabilities.has_egl_support:
       for data in self.egl_images.values():
         destroy_egl_image(data)
       self.egl_images = {}

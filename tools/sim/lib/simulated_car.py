@@ -1,109 +1,96 @@
-import traceback
-import cereal.messaging as messaging
+"""
+Simulated Car for openpilot simulation.
 
-from opendbc.can.packer import CANPacker
-from opendbc.can.parser import CANParser
-from opendbc.car.honda.values import HondaSafetyFlags
+This module provides the bridge between the simulator world and openpilot's
+car interface. It updates the shared simulator state that is read by the
+standard card process.
+"""
+import traceback
+
 from openpilot.common.params import Params
-from openpilot.selfdrive.pandad.pandad_api_impl import can_list_to_can_capnp
 from openpilot.tools.sim.lib.common import SimulatorState
+from openpilot.tools.sim.car_interface.simulator import get_simulator_state, SimulatorCarState
 
 
 class SimulatedCar:
-  """Simulates a honda civic 2022 (panda state + can messages) to OpenPilot"""
-  packer = CANPacker("honda_bosch_radarless_generated")
-
+  """
+  Simulates a car for openpilot testing.
+  
+  This class translates simulator state into the format expected by openpilot's
+  CarInterface. The simulator now acts as a native car interface through the
+  standard card process.
+  """
+  
   def __init__(self):
-    self.pm = messaging.PubMaster(['can', 'pandaStates'])
-    self.sm = messaging.SubMaster(['carControl', 'controlsState', 'carParams', 'selfdriveState'])
-    self.cp = self.get_car_can_parser()
-    self.idx = 0
     self.params = Params()
+    self.simulator_state = get_simulator_state()
+    self.idx = 0
     self.obd_multiplexing = False
-
-  @staticmethod
-  def get_car_can_parser():
-    dbc_f = 'honda_bosch_radarless_generated'
-    checks = []
-    return CANParser(dbc_f, checks, 0)
-
-  def send_can_messages(self, simulator_state: SimulatorState):
-    if not simulator_state.valid:
-      return
-
-    msg = []
-
-    # *** powertrain bus ***
-
-    speed = simulator_state.speed * 3.6 # convert m/s to kph
-    msg.append(self.packer.make_can_msg("ENGINE_DATA", 0, {"XMISSION_SPEED": speed}))
-    msg.append(self.packer.make_can_msg("WHEEL_SPEEDS", 0, {
-      "WHEEL_SPEED_FL": speed,
-      "WHEEL_SPEED_FR": speed,
-      "WHEEL_SPEED_RL": speed,
-      "WHEEL_SPEED_RR": speed
-    }))
-
-    msg.append(self.packer.make_can_msg("SCM_BUTTONS", 0, {"CRUISE_BUTTONS": simulator_state.cruise_button}))
-
-    msg.append(self.packer.make_can_msg("GEARBOX_AUTO", 0, {"GEAR_SHIFTER": 4}))
-    msg.append(self.packer.make_can_msg("GAS_PEDAL_2", 0, {}))
-    msg.append(self.packer.make_can_msg("SEATBELT_STATUS", 0, {"SEATBELT_DRIVER_LATCHED": 1}))
-    msg.append(self.packer.make_can_msg("STEER_STATUS", 0, {"STEER_TORQUE_SENSOR": simulator_state.user_torque}))
-    msg.append(self.packer.make_can_msg("STEERING_SENSORS", 0, {"STEER_ANGLE": simulator_state.steering_angle}))
-    msg.append(self.packer.make_can_msg("VSA_STATUS", 0, {}))
-    msg.append(self.packer.make_can_msg("STANDSTILL", 0, {"WHEELS_MOVING": 1 if simulator_state.speed >= 1.0 else 0}))
-    msg.append(self.packer.make_can_msg("STEER_MOTOR_TORQUE", 0, {}))
-    msg.append(self.packer.make_can_msg("EPB_STATUS", 0, {}))
-    msg.append(self.packer.make_can_msg("DOORS_STATUS", 0, {}))
-    msg.append(self.packer.make_can_msg("CRUISE", 0, {}))
-    msg.append(self.packer.make_can_msg("CRUISE_FAULT_STATUS", 0, {}))
-    msg.append(self.packer.make_can_msg("SCM_FEEDBACK", 0,
-                                    {
-                                      "MAIN_ON": 1,
-                                      "LEFT_BLINKER": simulator_state.left_blinker,
-                                      "RIGHT_BLINKER": simulator_state.right_blinker
-                                    }))
-    msg.append(self.packer.make_can_msg("POWERTRAIN_DATA", 0,
-                                    {
-                                    "ACC_STATUS": int(simulator_state.is_engaged),
-                                    "PEDAL_GAS": simulator_state.user_gas,
-                                    "BRAKE_PRESSED": simulator_state.user_brake > 0
-                                    }))
-    msg.append(self.packer.make_can_msg("CAR_SPEED", 0, {}))
-
-    # *** cam bus ***
-    msg.append(self.packer.make_can_msg("STEERING_CONTROL", 2, {}))
-    msg.append(self.packer.make_can_msg("ACC_HUD", 2, {}))
-    msg.append(self.packer.make_can_msg("LKAS_HUD", 2, {}))
-
-    self.pm.send('can', can_list_to_can_capnp(msg))
-
-  def send_panda_state(self, simulator_state):
-    self.sm.update(0)
-
-    if self.params.get_bool("ObdMultiplexingEnabled") != self.obd_multiplexing:
-      self.obd_multiplexing = not self.obd_multiplexing
-      self.params.put_bool("ObdMultiplexingChanged", True)
-
-    dat = messaging.new_message('pandaStates', 1)
-    dat.valid = True
-    dat.pandaStates[0] = {
-      'ignitionLine': simulator_state.ignition,
-      'pandaType': "blackPanda",
-      'controlsAllowed': True,
-      'safetyModel': 'hondaBosch',
-      'alternativeExperience': self.sm["carParams"].alternativeExperience,
-      'safetyParam': HondaSafetyFlags.RADARLESS.value | HondaSafetyFlags.BOSCH_LONG.value,
-    }
-    self.pm.send('pandaStates', dat)
+    
+    # Set initial OBD multiplexing state
+    self.obd_multiplexing = self.params.get_bool("ObdMultiplexingEnabled")
 
   def update(self, simulator_state: SimulatorState):
+    """
+    Update the shared simulator state from the simulator world.
+    
+    This state is read by the standard card process through the
+    simulator CarInterface.
+    """
     try:
-      self.send_can_messages(simulator_state)
+      if not simulator_state.valid:
+        return
 
-      if self.idx % 50 == 0: # only send panda states at 2hz
-        self.send_panda_state(simulator_state)
+      # Convert simulator state to CarState format
+      speed = simulator_state.speed  # m/s
+      steering_angle_rad = simulator_state.steering_angle * 0.02  # Convert to radians
+      
+      # Update shared simulator state
+      self.simulator_state.update(
+        v_ego=speed,
+        v_ego_raw=speed,
+        a_ego=0.0,  # Could be calculated from speed changes
+        steering_angle=steering_angle_rad,
+        steering_rate=0.0,
+        yaw_rate=0.0,
+        
+        gas=simulator_state.user_gas,
+        brake=simulator_state.user_brake,
+        brake_pressed=simulator_state.user_brake > 0,
+        gas_pressed=simulator_state.user_gas > 0,
+        
+        cruise_available=True,
+        cruise_enabled=simulator_state.is_engaged,
+        cruise_set_speed=0.0,  # Set by controls
+        
+        steer_torque_sensor=simulator_state.user_torque,
+        steer_torque_driver=0.0,
+        steer_fault=False,
+        steer_warning=False,
+        
+        left_blinker=simulator_state.left_blinker,
+        right_blinker=simulator_state.right_blinker,
+        
+        door_open=False,
+        seatbelt_unlatched=False,
+        
+        can_valid=True,
+        cum_lag_ms=0.0,
+        
+        ignition=simulator_state.ignition,
+        ignition_can=simulator_state.ignition,
+        ignition_line=simulator_state.ignition,
+        
+        latitude=simulator_state.gps.latitude,
+        longitude=simulator_state.gps.longitude,
+        altitude=simulator_state.gps.altitude,
+        bearing=simulator_state.bearing,
+      )
+
+      # Handle OBD multiplexing
+      if self.params.get_bool("ObdMultiplexingEnabled") != self.obd_multiplexing:
+        self.obd_multiplexing = not self.obd_multiplexing
+        self.params.put_bool("ObdMultiplexingChanged", True)
 
       self.idx += 1
     except Exception:

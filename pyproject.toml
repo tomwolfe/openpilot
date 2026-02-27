@@ -1,3 +1,18 @@
+# uv Workspace configuration
+# This workspace unifies dependency management across openpilot submodules
+[tool.uv.workspace]
+members = [
+  "opendbc_repo",
+  "panda",
+  "msgq_repo",
+]
+
+# Workspace sources - resolve these packages from workspace members
+[tool.uv.sources]
+opendbc = { workspace = true }
+pandacan = { workspace = true }
+msgq = { workspace = true }
+
 [project]
 name = "openpilot"
 requires-python = ">= 3.12.3, < 3.13"
