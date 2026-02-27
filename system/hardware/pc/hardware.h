@@ -11,5 +11,6 @@ public:
   static bool PC() { return true; }
   static bool TICI() { return false; }
   static bool AGNOS() { return false; }
-  static bool SIMULATOR() { return util::getenv("SIMULATOR", 0) == 1; }
+  // Check both SIMULATION (legacy, used by process_replay) and SIMULATOR
+  static bool SIMULATOR() { return util::getenv("SIMULATOR", 0) == 1 || util::getenv("SIMULATION", 0) == 1; }
 };

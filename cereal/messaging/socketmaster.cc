@@ -6,7 +6,9 @@
 #include "cereal/services.h"
 #include "cereal/messaging/messaging.h"
 
-const bool SIMULATION = (getenv("SIMULATION") != nullptr) && (std::string(getenv("SIMULATION")) == "1");
+// Check both SIMULATION (legacy) and SIMULATOR environment variables
+static const bool SIMULATION = (getenv("SIMULATION") != nullptr && std::string(getenv("SIMULATION")) == "1") ||
+                               (getenv("SIMULATOR") != nullptr && std::string(getenv("SIMULATOR")) == "1");
 
 static inline bool inList(const std::vector<const char *> &list, const char *value) {
   for (auto &v : list) {

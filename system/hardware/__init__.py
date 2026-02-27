@@ -31,7 +31,7 @@ def _detect_hardware() -> HardwareBase:
   
   Detection order:
   1. Check for TICI file (comma 3X hardware)
-  2. Check for SIMULATOR environment variable
+  2. Check for SIMULATOR/SIMULATION environment variable
   3. Default to PC
   """
   # Check for comma 3X hardware
@@ -39,7 +39,9 @@ def _detect_hardware() -> HardwareBase:
     return Tici()
   
   # Check for simulator environment
-  if os.environ.get('SIMULATOR', '0') == '1':
+  # Note: SIMULATION is used by process_replay and tools/sim
+  # SIMULATOR is the newer name for the same purpose
+  if os.environ.get('SIMULATOR', '0') == '1' or os.environ.get('SIMULATION', '0') == '1':
     return Simulator()
   
   # Default to PC
