@@ -1,7 +1,5 @@
-# Note: c++.capnp import removed to avoid duplicate ID conflicts with cereal
-# The $Cxx.namespace annotation is not needed at runtime
-# using Cxx = import "./include/c++.capnp";
-# $Cxx.namespace("cereal");
+using Cxx = import "./include/c++.capnp";
+$Cxx.namespace("cereal");
 
 @0x8e2af1e708af8b8d;
 
