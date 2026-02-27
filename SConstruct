@@ -233,7 +233,8 @@ Export('messaging')
 
 
 # Build other submodules - local or skip if installed
-if PANDA_LOCAL:
+# Skip panda build on non-Linux systems (no arm-none-eabi-gcc)
+if PANDA_LOCAL and platform.system() == "Linux":
   SConscript(['panda/SConscript'])
 
 # Build rednose library - local or skip if installed
