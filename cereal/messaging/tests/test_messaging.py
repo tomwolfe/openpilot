@@ -1,6 +1,7 @@
 import capnp
 import multiprocessing
 import numbers
+import os
 import random
 import threading
 import time
@@ -21,6 +22,10 @@ def random_socks(num_socks=10):
 
 def random_bytes(length=1000):
   return bytes([random.randrange(0xFF) for _ in range(length)])
+
+def zmq_sleep(t=1):
+  if "ZMQ" in os.environ:
+    time.sleep(t)
 
 
 # TODO: this should take any capnp struct and returrn a msg with random populated data

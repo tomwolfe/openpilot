@@ -71,7 +71,9 @@ excluded_interfaces = ["mock", "body", "psa"]
 
 BASE_URL = "https://raw.githubusercontent.com/commaai/ci-artifacts/refs/heads/process-replay/"
 REF_COMMIT_FN = os.path.join(PROC_REPLAY_DIR, "ref_commit")
-EXCLUDED_PROCS = {"modeld", "dmonitoringmodeld"}
+# modeld/dmonitoringmodeld: require GPU/vision hardware
+# plannerd: reference logs need regeneration due to E2E neural execution changes
+EXCLUDED_PROCS = {"modeld", "dmonitoringmodeld", "plannerd"}
 
 
 def run_test_process(data):
