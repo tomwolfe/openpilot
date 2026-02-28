@@ -32,10 +32,18 @@ if [[ ! -f "tools/op.sh" ]]; then
   exit 1
 fi
 
-# Check dependencies
-if ! command -v scons &> /dev/null; then
-  echo "Installing dependencies..."
-  bash tools/op.sh setup
+# Check dependencies - skip op.sh setup in Codespaces
+if [[ -n "$CODESPACES" ]]; then
+  echo "Running in GitHub Codespaces, skipping op.sh setup"
+  echo "Dependencies should already be installed"
+else
+  if ! command -v scons &> /dev/null; then
+    echo "Installing dependencies..."
+    bash tools/op.sh setup || {
+      echo "WARNING: op.sh setup failed, continuing anyway..."
+      echo "You may need to install dependencies manually"
+    }
+  fi
 fi
 
 # Build openpilot
