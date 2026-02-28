@@ -56,7 +56,12 @@ fi
 
 # Build openpilot
 echo "Building openpilot..."
-scons -j$(nproc)
+# Use uv run to ensure we're in the virtual environment
+if command -v uv &> /dev/null; then
+  uv run scons -j$(nproc)
+else
+  scons -j$(nproc)
+fi
 
 # Generate reference logs
 echo ""
