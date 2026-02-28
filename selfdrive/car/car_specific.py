@@ -27,8 +27,9 @@ class CarSpecificEvents:
     events = self.create_common_events(CS, CS_prev)
 
     # Get brand-specific events from the car interface
-    CI = interfaces[self.CP.carFingerprint]
-    brand_events = CI.get_standard_events(CS, CS_prev, CC)
+    CarInterface = interfaces[self.CP.carFingerprint]
+    ci = CarInterface(self.CP)
+    brand_events = ci.get_standard_events(CS, CS_prev, CC)
     for event_name in brand_events:
       events.add(getattr(EventName, event_name))
 
