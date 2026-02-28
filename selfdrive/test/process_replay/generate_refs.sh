@@ -7,25 +7,34 @@ set -e
 echo "=== Generating Process Replay Reference Logs ==="
 echo ""
 
-# Navigate to openpilot directory
-cd "$(dirname "$0")/.."
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Navigate to openpilot root (two levels up from script)
+OPENPILOT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$OPENPILOT_ROOT"
+
+echo "Working directory: $(pwd)"
 
 # Check if running on Linux
 if [[ "$(uname)" != "Linux" ]]; then
-  echo "ERROR: This script must be run on Linux"
-  echo "The process replay tests require msgq which only works on Linux"
+  echo "WARNING: Running on $(uname), not Linux"
+  echo "The process replay tests may not work correctly on non-Linux systems"
   echo ""
-  echo "Options:"
-  echo "1. Run this script on a Linux machine"
-  echo "2. Run in GitHub Actions (see .github/workflows/update_process_replay_refs.yml)"
-  echo "3. Run in Docker: docker run -v \$(pwd):/openpilot commaai/openpilot-base ./selfdrive/test/process_replay/generate_refs.sh"
+  echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
+  sleep 5
+fi
+
+# Check if op.sh exists
+if [[ ! -f "tools/op.sh" ]]; then
+  echo "ERROR: tools/op.sh not found"
+  echo "Make sure you're running this from within the openpilot repository"
   exit 1
 fi
 
 # Check dependencies
 if ! command -v scons &> /dev/null; then
   echo "Installing dependencies..."
-  ./tools/op.sh setup
+  bash tools/op.sh setup
 fi
 
 # Build openpilot
