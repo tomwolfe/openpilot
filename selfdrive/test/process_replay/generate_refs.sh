@@ -34,8 +34,16 @@ fi
 
 # Check dependencies - skip op.sh setup in Codespaces
 if [[ -n "$CODESPACES" ]]; then
-  echo "Running in GitHub Codespaces, skipping op.sh setup"
-  echo "Dependencies should already be installed"
+  echo "Running in GitHub Codespaces, installing Python dependencies..."
+  # Install Python dependencies with uv
+  if command -v uv &> /dev/null; then
+    uv sync || {
+      echo "WARNING: uv sync failed, trying pip..."
+      pip install -e . || echo "WARNING: pip install failed"
+    }
+  else
+    pip install -e . || echo "WARNING: pip install failed"
+  fi
 else
   if ! command -v scons &> /dev/null; then
     echo "Installing dependencies..."
