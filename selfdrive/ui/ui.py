@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 
-from openpilot.system.hardware import HARDWARE, TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.common.realtime import config_realtime_process, set_core_affinity
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.main import MainLayout

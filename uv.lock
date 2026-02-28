@@ -838,44 +838,39 @@ name = "msgq"
 version = "0.0.1"
 source = { editable = "msgq_repo" }
 dependencies = [
-    { name = "cython" },
-    { name = "numpy" },
-    { name = "setuptools" },
-]
-
-[package.optional-dependencies]
-dev = [
     { name = "codespell" },
     { name = "coverage" },
     { name = "cppcheck" },
     { name = "cpplint" },
+    { name = "cython" },
     { name = "lefthook" },
+    { name = "numpy" },
     { name = "parameterized" },
     { name = "pytest" },
     { name = "pytest-retry" },
     { name = "ruff" },
     { name = "scons" },
+    { name = "setuptools" },
     { name = "ty" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "codespell", marker = "extra == 'dev'" },
-    { name = "coverage", marker = "extra == 'dev'" },
-    { name = "cppcheck", marker = "extra == 'dev'" },
-    { name = "cpplint", marker = "extra == 'dev'" },
+    { name = "codespell" },
+    { name = "coverage" },
+    { name = "cppcheck" },
+    { name = "cpplint" },
     { name = "cython" },
-    { name = "lefthook", marker = "extra == 'dev'" },
+    { name = "lefthook" },
     { name = "numpy" },
-    { name = "parameterized", marker = "extra == 'dev'" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-retry", marker = "extra == 'dev'" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "scons", marker = "extra == 'dev'" },
+    { name = "parameterized" },
+    { name = "pytest" },
+    { name = "pytest-retry" },
+    { name = "ruff" },
+    { name = "scons" },
     { name = "setuptools" },
-    { name = "ty", marker = "extra == 'dev'" },
+    { name = "ty" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "multidict"

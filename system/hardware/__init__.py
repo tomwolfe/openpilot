@@ -16,8 +16,6 @@ New code should use capability checks via HARDWARE.capabilities instead:
 etc.
 """
 import os
-import platform
-from typing import cast
 
 from openpilot.system.hardware.base import HardwareBase, DeviceType
 from openpilot.system.hardware.tici.hardware import Tici
@@ -28,7 +26,7 @@ from openpilot.system.hardware.simulator.hardware import Simulator
 def _detect_hardware() -> HardwareBase:
   """
   Automatically detects and returns the appropriate hardware interface.
-  
+
   Detection order:
   1. Check for TICI file (comma 3X hardware)
   2. Check for SIMULATOR/SIMULATION environment variable
@@ -37,19 +35,19 @@ def _detect_hardware() -> HardwareBase:
   # Check for comma 3X hardware
   if os.path.isfile('/TICI'):
     return Tici()
-  
+
   # Check for simulator environment
   # Note: SIMULATION is used by process_replay and tools/sim
   # SIMULATOR is the newer name for the same purpose
   if os.environ.get('SIMULATOR', '0') == '1' or os.environ.get('SIMULATION', '0') == '1':
     return Simulator()
-  
+
   # Default to PC
   return Pc()
 
 
 # Auto-detect hardware
-HARDWARE = cast(HardwareBase, _detect_hardware())
+HARDWARE = _detect_hardware()
 
 # Backward compatibility properties (deprecated - use capabilities instead)
 TICI = isinstance(HARDWARE, Tici)

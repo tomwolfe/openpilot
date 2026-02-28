@@ -84,7 +84,7 @@ class Tici(HardwareBase):
     # Set up capabilities for TICI hardware
     device_type = self.get_device_type()
     is_mici = (device_type == "mici")
-    
+
     # Core capabilities - TICI has all the specialized hardware
     self._capabilities._has_managed_fan = True
     self._capabilities._has_internal_panda = True
@@ -100,12 +100,12 @@ class Tici(HardwareBase):
     self._capabilities._has_power_save_mode = True
     self._capabilities._has_lpa = True
     self._capabilities._has_amplifier = not is_mici
-    
+
     # System capabilities
     self._capabilities._requires_realtime = True
     self._capabilities._has_core_affinity_control = True
     self._capabilities._is_agnos = os.path.isfile('/AGNOS')
-  
+
   @cached_property
   def bus(self):
     import dbus

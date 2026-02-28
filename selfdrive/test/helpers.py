@@ -32,7 +32,7 @@ def release_only(f):
   @wraps(f)
   def wrap(self, *args, **kwargs):
     if "RELEASE" not in os.environ:
-      pytest.skip("This test is only for release branches")
+      raise pytest.skip.Exception("This test is only for release branches")
     f(self, *args, **kwargs)
   return wrap
 

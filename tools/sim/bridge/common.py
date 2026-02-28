@@ -15,7 +15,7 @@ from openpilot.selfdrive.test.helpers import set_params_enabled
 from openpilot.tools.sim.lib.common import SimulatorState, World
 from openpilot.tools.sim.lib.simulated_car import SimulatedCar
 from openpilot.tools.sim.lib.simulated_sensors import SimulatedSensors
-from openpilot.tools.sim.car_interface.simulator import get_simulator_state, register_simulator_interface
+from openpilot.tools.sim.car_interface.simulator import register_simulator_interface
 
 QueueMessage = namedtuple("QueueMessage", ["type", "info"], defaults=[None])
 
@@ -61,7 +61,7 @@ class SimulatorBridge(ABC):
     self.startup_button_prev = True
 
     self.test_run = False
-    
+
     # Register simulator car interface
     register_simulator_interface()
 

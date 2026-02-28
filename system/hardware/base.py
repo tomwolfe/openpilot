@@ -19,7 +19,7 @@ class DeviceType(Enum):
 
 class HardwareCapabilities:
   """Capability flags for hardware features."""
-  
+
   def __init__(self):
     # Core capabilities
     self._has_managed_fan = False
@@ -36,91 +36,91 @@ class HardwareCapabilities:
     self._has_power_save_mode = False
     self._has_lpa = False
     self._has_amplifier = False
-    
+
     # System capabilities
     self._requires_realtime = False
     self._has_core_affinity_control = False
     self._is_agnos = False
-    
+
     # Simulation capabilities
     self._is_simulator = False
     self._has_simulated_car_interface = False
-  
+
   # Core capabilities
   @property
   def has_managed_fan(self) -> bool:
     return self._has_managed_fan
-  
+
   @property
   def has_internal_panda(self) -> bool:
     return self._has_internal_panda
-  
+
   @property
   def has_modem(self) -> bool:
     return self._has_modem
-  
+
   @property
   def has_display(self) -> bool:
     return self._has_display
-  
+
   @property
   def has_touchscreen(self) -> bool:
     return self._has_touchscreen
-  
+
   @property
   def has_ir_camera(self) -> bool:
     return self._has_ir_camera
-  
+
   @property
   def has_egl_support(self) -> bool:
     return self._has_egl_support
-  
+
   @property
   def has_gpu_acceleration(self) -> bool:
     return self._has_gpu_acceleration
-  
+
   @property
   def has_power_monitoring(self) -> bool:
     return self._has_power_monitoring
-  
+
   @property
   def has_thermal_zones(self) -> bool:
     return self._has_thermal_zones
-  
+
   @property
   def has_screen_brightness_control(self) -> bool:
     return self._has_screen_brightness_control
-  
+
   @property
   def has_power_save_mode(self) -> bool:
     return self._has_power_save_mode
-  
+
   @property
   def has_lpa(self) -> bool:
     return self._has_lpa
-  
+
   @property
   def has_amplifier(self) -> bool:
     return self._has_amplifier
-  
+
   # System capabilities
   @property
   def requires_realtime(self) -> bool:
     return self._requires_realtime
-  
+
   @property
   def has_core_affinity_control(self) -> bool:
     return self._has_core_affinity_control
-  
+
   @property
   def is_agnos(self) -> bool:
     return self._is_agnos
-  
+
   # Simulation capabilities
   @property
   def is_simulator(self) -> bool:
     return self._is_simulator
-  
+
   @property
   def has_simulated_car_interface(self) -> bool:
     return self._has_simulated_car_interface
@@ -214,21 +214,20 @@ class LPABase(ABC):
 class HardwareBase(ABC):
   def __init__(self):
     self._capabilities = HardwareCapabilities()
-  
+
   @property
   def capabilities(self) -> HardwareCapabilities:
     """Returns the hardware capabilities object for capability-based checks."""
     return self._capabilities
-  
+
   @abstractmethod
   def get_device_type(self) -> str:
     """Returns the device type string (e.g., 'tici', 'pc', 'simulator')."""
-    pass
-  
+
   def get_device_type_enum(self) -> DeviceType:
     """Returns the device type as an enum. Override in subclasses for specific types."""
     return DeviceType.PC
-  
+
   @staticmethod
   def get_cmdline() -> dict[str, str]:
     """Reads kernel command line parameters. Returns empty dict if unavailable."""
@@ -236,7 +235,7 @@ class HardwareBase(ABC):
       with open('/proc/cmdline') as f:
         cmdline = f.read()
       return {kv[0]: kv[1] for kv in [s.split('=') for s in cmdline.split(' ')] if len(kv) == 2}
-    except (FileNotFoundError, IOError):
+    except (OSError, FileNotFoundError):
       return {}
 
   @staticmethod
@@ -320,11 +319,9 @@ class HardwareBase(ABC):
 
   def set_display_power(self, on: bool):
     """Sets display power on/off."""
-    pass
 
   def set_screen_brightness(self, percentage):
     """Sets screen brightness (0-100)."""
-    pass
 
   def get_screen_brightness(self):
     """Returns current screen brightness (0-100)."""
@@ -332,7 +329,6 @@ class HardwareBase(ABC):
 
   def set_power_save(self, powersave_enabled):
     """Enables/disables power save mode."""
-    pass
 
   def get_gpu_usage_percent(self):
     """Returns GPU usage percentage."""
@@ -348,15 +344,12 @@ class HardwareBase(ABC):
 
   def initialize_hardware(self):
     """Initializes hardware components. Called once at startup."""
-    pass
 
   def configure_modem(self):
     """Configures modem settings."""
-    pass
 
   def reboot_modem(self):
     """Reboots the cellular modem."""
-    pass
 
   def get_networks(self):
     """Returns network scan results."""
@@ -368,11 +361,9 @@ class HardwareBase(ABC):
 
   def reset_internal_panda(self):
     """Resets the internal panda."""
-    pass
 
   def recover_internal_panda(self):
     """Recovers the internal panda from a bad state."""
-    pass
 
   def get_modem_data_usage(self):
     """Returns (tx_bytes, rx_bytes) for modem data usage."""
@@ -388,4 +379,3 @@ class HardwareBase(ABC):
 
   def set_ir_power(self, percent: int):
     """Sets IR emitter power (0-100)."""
-    pass

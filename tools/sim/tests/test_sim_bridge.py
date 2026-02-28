@@ -15,7 +15,7 @@ class TestSimBridgeBase:
   @classmethod
   def setup_class(cls):
     if cls is TestSimBridgeBase:
-      raise pytest.skip("Don't run this base class, run test_metadrive_bridge.py instead")
+      raise pytest.skip.Exception("Don't run this base class, run test_metadrive_bridge.py instead")
 
   def setup_method(self):
     self.processes = []

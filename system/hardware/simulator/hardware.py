@@ -15,13 +15,13 @@ NetworkType = log.DeviceState.NetworkType
 class Simulator(HardwareBase):
   """
   Hardware interface for the simulation environment.
-  
+
   The simulator provides:
   - Virtual CAN interface through the standard card process
   - Simulated sensors (cameras, IMU, GPS)
   - No real hardware dependencies (runs on any Linux/Mac/WSL2)
   """
-  
+
   def __init__(self):
     super().__init__()
     # Set up capabilities for simulator
@@ -44,21 +44,21 @@ class Simulator(HardwareBase):
     self._capabilities._has_power_save_mode = False
     self._capabilities._has_lpa = False
     self._capabilities._has_amplifier = False
-  
+
   def get_device_type(self) -> str:
     return "simulator"
-  
+
   def get_device_type_enum(self) -> DeviceType:
     return DeviceType.SIMULATOR
-  
+
   def get_network_type(self):
     # Simulator uses network for rendering/communication
     return NetworkType.wifi
-  
+
   def get_network_metered(self, network_type) -> bool:
     # Assume simulator network is not metered
     return False
-  
+
   def get_thermal_config(self):
     # Return minimal thermal config for simulator
     # In simulation, we don't have real thermal zones
@@ -66,7 +66,7 @@ class Simulator(HardwareBase):
       cpu=[ThermalZone("sim_cpu", scale=1.0)],
       gpu=[ThermalZone("sim_gpu", scale=1.0)],
     )
-  
+
   def get_gpu_usage_percent(self):
     # Return a simulated GPU usage
     try:
@@ -75,31 +75,27 @@ class Simulator(HardwareBase):
       return psutil.cpu_percent(interval=0.1)
     except Exception:
       return 0
-  
+
   def booted(self) -> bool:
     # Simulator is always "booted"
     return True
-  
+
   def initialize_hardware(self):
     """Initialize simulator hardware (no-op for virtual hardware)."""
-    pass
-  
+
   def set_power_save(self, powersave_enabled):
     """Power save mode not applicable in simulation."""
-    pass
-  
+
   def get_screen_brightness(self):
     """Return default brightness for simulator UI."""
     return 50
-  
+
   def set_screen_brightness(self, percentage):
     """Set screen brightness (simulated, no effect)."""
-    pass
-  
+
   def set_display_power(self, on: bool):
     """Display power control (simulated, no effect)."""
-    pass
-  
+
   def get_sim_info(self):
     """Return simulated SIM info."""
     return {
@@ -109,23 +105,23 @@ class Simulator(HardwareBase):
       'sim_state': ["NOT_PRESENT"],
       'data_connected': False
     }
-  
+
   def get_serial(self):
     """Return simulator serial number."""
     return os.environ.get('SIMULATOR_SERIAL', 'SIM00000000')
-  
+
   def get_voltage(self) -> float:
     """Return simulated battery voltage."""
     return 12.0
-  
+
   def get_current(self) -> float:
     """Return simulated battery current."""
     return 0.0
-  
+
   def get_current_power_draw(self):
     """Return simulated power draw."""
     return 0.0
-  
+
   def get_som_power_draw(self):
     """Return simulated SoM power draw."""
     return 0.0

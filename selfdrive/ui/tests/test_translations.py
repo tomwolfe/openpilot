@@ -103,7 +103,7 @@ class TestTranslations:
       response.raise_for_status()
     except requests.exceptions.HTTPError as e:
       if e.response is not None and e.response.status_code == 429:
-        pytest.skip("word list rate limited")
+        raise pytest.skip.Exception("word list rate limited") from None
       raise
 
     banned_words = {line.strip() for line in response.text.splitlines()}

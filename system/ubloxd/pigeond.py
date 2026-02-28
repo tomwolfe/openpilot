@@ -304,6 +304,7 @@ def run_receiving(duration: int = 0):
 
 
 def main():
+  from openpilot.system.hardware import TICI
   assert TICI, "unsupported hardware for pigeond"
   run_receiving()
 
