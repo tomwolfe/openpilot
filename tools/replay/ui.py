@@ -266,17 +266,24 @@ def ui_thread(addr):
 def get_arg_parser():
   parser = argparse.ArgumentParser(description="Show replay data in a UI.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-  parser.add_argument("ip_address", nargs="?", default="127.0.0.1", help="The ip address on which to receive zmq messages.")
-
-  parser.add_argument("--frame-address", default=None, help="The frame address (fully qualified ZMQ endpoint for frames) on which to receive zmq messages.")
+  parser.add_argument("ip_address", nargs="?", default="127.0.0.1",
+                      help="The IP address to connect to. Use 127.0.0.1 for local msgq, or a remote IP for ZMQ.")
+  parser.add_argument("--use-zmq", action="store_true",
+                      help="Force use of ZMQ transport even for local connections.")
   return parser
 
 
 if __name__ == "__main__":
   args = get_arg_parser().parse_args(sys.argv[1:])
 
-  if args.ip_address != "127.0.0.1":
+  # Use ZMQ when connecting to remote IP or when explicitly requested
+  if args.ip_address != "127.0.0.1" or args.use_zmq:
+    # For remote connections, ZMQ must be used since msgq shared memory is local-only
+    print(f"Connecting to {args.ip_address} via ZMQ...")
+    print("Note: Ensure a msgq-to-zmq bridge is running on the remote host.")
     os.environ["ZMQ"] = "1"
     messaging.reset_context()
+  else:
+    print("Using local msgq transport.")
 
   ui_thread(args.ip_address)

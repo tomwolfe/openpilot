@@ -59,6 +59,12 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     assert wide_camera_array is not None
     wide_road_image = np.frombuffer(wide_camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
 
+  # Enable headless rendering - MetaDrive can render off-screen without a display
+  if not config.get("use_render", True):
+    # Even in headless mode, we need to enable rendering for camera observations
+    config["use_render"] = True
+    config["render_offscreen"] = True
+
   env = MetaDriveEnv(config)
 
   def get_current_lane_info(vehicle):

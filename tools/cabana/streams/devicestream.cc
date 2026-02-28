@@ -33,8 +33,9 @@ DeviceStream::~DeviceStream() {
 void DeviceStream::start() {
   if (!zmq_address.isEmpty()) {
     bridge_process = new QProcess(this);
-    QString bridge_path = QCoreApplication::applicationDirPath() + "/../../cereal/messaging/bridge";
-    bridge_process->start(QFileInfo(bridge_path).absoluteFilePath(), QStringList { zmq_address, "/\"can/\"" });
+    // Use the Python msgq-to-zmq bridge for remote connections
+    QString bridge_script = QCoreApplication::applicationDirPath() + "/../../tools/replay/msgq_to_zmq_bridge.py";
+    bridge_process->start("python3", QStringList{bridge_script, "--services", "can", "--bind-address", zmq_address});
 
     if (!bridge_process->waitForStarted()) {
       QMessageBox::warning(nullptr, tr("Error"), tr("Failed to start bridge: %1").arg(bridge_process->errorString()));
@@ -65,10 +66,10 @@ void DeviceStream::streamThread() {
 // OpenDeviceWidget
 
 OpenDeviceWidget::OpenDeviceWidget(QWidget *parent) : AbstractOpenStreamWidget(parent) {
-  QRadioButton *msgq = new QRadioButton(tr("MSGQ"));
-  QRadioButton *zmq = new QRadioButton(tr("ZMQ"));
+  QRadioButton *msgq = new QRadioButton(tr("MSGQ (local)"));
+  QRadioButton *zmq = new QRadioButton(tr("ZMQ (remote)"));
   ip_address = new QLineEdit(this);
-  ip_address->setPlaceholderText(tr("Enter device Ip Address"));
+  ip_address->setPlaceholderText(tr("Enter device IP Address"));
   QString ip_range = "(?:[0-1]?[0-9]?[0-9]|2[0-4][0-9]|25[0-5])";
   QString pattern("^" + ip_range + "\\." + ip_range + "\\." + ip_range + "\\." + ip_range + "$");
   QRegularExpression re(pattern);

@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""
+Legacy Longitudinal MPC Controller
+
+DEPRECATED: This controller is part of the classical MPC-based longitudinal control system.
+It is no longer the default in openpilot as of Phase 2: Unified Neural Execution.
+
+The default longitudinal controller now uses End-to-End (E2E) neural model outputs
+directly from modelV2.action.desiredAcceleration.
+
+This module is retained for backward compatibility when ForceClassicalMPC parameter
+is enabled. New development should focus on improving the E2E model.
+"""
 import os
 import time
 import numpy as np

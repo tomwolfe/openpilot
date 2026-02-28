@@ -33,10 +33,10 @@ In order to use a joystick over the network, we need to run joystick_control loc
    # on your comma device
    echo -n "1" > /data/params/d/JoystickDebugMode
    ```
-3. Run bridge with your laptop's IP address. This republishes the `testJoystick` packets sent from your laptop so that openpilot can receive them:
+3. Start the msgq-to-zmq bridge on your comma device. This republishes the `testJoystick` packets sent from your laptop so that openpilot can receive them:
    ```shell
    # on your comma device
-   cereal/messaging/bridge {LAPTOP_IP} testJoystick
+   python3 tools/replay/msgq_to_zmq_bridge.py --services testJoystick --bind-address 0.0.0.0
    ```
 4. Start joystick_control on your laptop in ZMQ mode.
    ```shell

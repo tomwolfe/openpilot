@@ -6,12 +6,13 @@ standard Linux/Mac/WSL2 systems.
 """
 import platform
 from cereal import log
-from openpilot.system.hardware.base import HardwareBase, DeviceType, ThermalConfig, ThermalZone
+from openpilot.system.hardware.base import DeviceType, ThermalConfig, ThermalZone
+from openpilot.system.hardware.development_base import DevelopmentHardware
 
 NetworkType = log.DeviceState.NetworkType
 
 
-class Pc(HardwareBase):
+class Pc(DevelopmentHardware):
   """
   Hardware interface for PC/Mac development systems.
 
@@ -23,33 +24,16 @@ class Pc(HardwareBase):
 
   def __init__(self):
     super().__init__()
-    # Set up capabilities for PC
+    # Set up PC-specific capabilities
     self._capabilities._has_egl_support = False  # Use software rendering on PC
     self._capabilities._has_gpu_acceleration = platform.system() != "Darwin"
-    self._capabilities._requires_realtime = False
     self._capabilities._has_core_affinity_control = platform.system() == "Linux"
-    # No specialized hardware on PC
-    self._capabilities._has_managed_fan = False
-    self._capabilities._has_internal_panda = False
-    self._capabilities._has_modem = False
-    self._capabilities._has_display = False
-    self._capabilities._has_touchscreen = False
-    self._capabilities._has_ir_camera = False
-    self._capabilities._has_power_monitoring = False
-    self._capabilities._has_thermal_zones = False
-    self._capabilities._has_screen_brightness_control = False
-    self._capabilities._has_power_save_mode = False
-    self._capabilities._has_lpa = False
-    self._capabilities._has_amplifier = False
 
   def get_device_type(self) -> str:
     return "pc"
 
   def get_device_type_enum(self) -> DeviceType:
     return DeviceType.PC
-
-  def get_network_type(self):
-    return NetworkType.wifi
 
   def get_thermal_config(self):
     # Return minimal thermal config for PC

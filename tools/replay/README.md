@@ -41,12 +41,20 @@ tools/replay/replay "a2a0ccea32023010|2023-07-27--13-01-19" --data_dir="/path_to
 ```
 
 ## Send Messages via ZMQ
-By default, replay sends messages via MSGQ. To switch to ZMQ, set the ZMQ environment variable.
+
+By default, replay uses `msgq` (shared memory) for high-performance local messaging. This is the recommended transport for all on-device and local PC usage.
+
+For external tools (plotjuggler, remote UI, etc.) that need to connect over the network, you can optionally start a msgq-to-zmq bridge:
 
 ```bash
-# Start replay and send messages via ZMQ:
-ZMQ=1 tools/replay/replay <route-name>
+# Start replay (uses msgq by default)
+tools/replay/replay <route-name>
+
+# In another terminal, start the bridge for external tools
+python3 tools/replay/msgq_to_zmq_bridge.py --services can,carState,controlsState,modelV2
 ```
+
+External tools can then connect via ZMQ to the bridged services.
 
 ## Usage
 For more information on available options and arguments, use the help command:
@@ -92,11 +100,22 @@ cd selfdrive/ui && ./ui.py
 ```
 
 ## Work with plotjuggler
-If you want to use replay with plotjuggler, you can stream messages by running:
+
+For local usage, plotjuggler can connect directly via msgq:
 
 ```bash
 tools/replay/replay <route-name>
-tools/plotjuggler/juggle.py --stream
+tools/plotjuggler/juggle.py
+```
+
+For remote connections, start the msgq-to-zmq bridge first:
+
+```bash
+# On the host running replay:
+python3 tools/replay/msgq_to_zmq_bridge.py --services can,carState,controlsState,modelV2
+
+# On the remote machine running plotjuggler:
+tools/plotjuggler/juggle.py --host <replay-host-ip>
 ```
 
 ## watch3
