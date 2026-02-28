@@ -9,11 +9,12 @@ echo ""
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Navigate to openpilot root (two levels up from script)
-OPENPILOT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Navigate to openpilot root (three levels up: process_replay -> test -> selfdrive -> root)
+OPENPILOT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$OPENPILOT_ROOT"
 
 echo "Working directory: $(pwd)"
+echo "Script directory: $SCRIPT_DIR"
 
 # Check if running on Linux
 if [[ "$(uname)" != "Linux" ]]; then
