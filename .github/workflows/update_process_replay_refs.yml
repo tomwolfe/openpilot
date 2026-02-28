@@ -1,0 +1,95 @@
+# Workflow to regenerate process replay reference logs
+# Trigger manually or when specific files change
+name: Update Process Replay References
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_to_fork:
+        description: 'Upload to fork of ci-artifacts (set CI_ARTIFACTS_FORK_USERNAME)'
+        required: false
+        default: 'false'
+      processes:
+        description: 'Specific processes to update (comma-separated, or "all")'
+        required: false
+        default: 'all'
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  update-refs:
+    runs-on: ubuntu-latest-m
+    if: github.repository == 'commaai/openpilot'
+    
+    steps:
+      - name: Checkout openpilot
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv sync --extra dev
+
+      - name: Generate reference logs
+        run: |
+          # Run process replay with update-refs flag
+          # This generates new reference logs for the current commit
+          uv run python selfdrive/test/process_replay/test_processes.py \
+            --update-refs \
+            -j$(nproc)
+          
+          # Show generated files
+          echo "Generated reference logs:"
+          ls -la selfdrive/test/process_replay/fakedata/
+          echo ""
+          echo "Reference commit:"
+          cat selfdrive/test/process_replay/ref_commit
+
+      - name: Upload reference logs as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: process-replay-refs
+          path: |
+            selfdrive/test/process_replay/fakedata/*.zst
+            selfdrive/test/process_replay/ref_commit
+          retention-days: 30
+
+      - name: Prepare upload to fork
+        if: github.event.inputs.upload_to_fork == 'true' && env.CI_ARTIFACTS_FORK_USERNAME != ''
+        run: |
+          # Clone ci-artifacts fork
+          git clone https://github.com/${{ env.CI_ARTIFACTS_FORK_USERNAME }}/ci-artifacts.git ci-artifacts-fork
+          cd ci-artifacts-fork
+          git checkout -b process-replay-update-${{ github.run_id }}
+          
+          # Copy new reference logs
+          cp ../openpilot/selfdrive/test/process_replay/fakedata/*.zst .
+          cp ../openpilot/selfdrive/test/process_replay/ref_commit .
+          
+          # Commit changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add *.zst ref_commit
+          git commit -m "Update process replay refs for openpilot@${{ github.sha }}"
+          
+          # Push to fork
+          git push origin process-replay-update-${{ github.run_id }}
+          
+          echo "::notice::Pushed reference logs to fork. Create a PR to commaai/ci-artifacts from branch: process-replay-update-${{ github.run_id }}"
+
+      - name: Create PR link
+        if: github.event.inputs.upload_to_fork == 'true' && env.CI_ARTIFACTS_FORK_USERNAME != ''
+        run: |
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to your fork: https://github.com/${{ env.CI_ARTIFACTS_FORK_USERNAME }}/ci-artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "2. Create a PR from branch \`process-replay-update-${{ github.run_id }}\` to \`commaai/ci-artifacts:process-replay\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. After PR merges, update BASE_URL in test_processes.py if needed" >> $GITHUB_STEP_SUMMARY

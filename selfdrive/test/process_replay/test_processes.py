@@ -69,11 +69,11 @@ segments = [
 # dashcamOnly makes don't need to be tested until a full port is done
 excluded_interfaces = ["mock", "body", "psa"]
 
-BASE_URL = "https://raw.githubusercontent.com/commaai/ci-artifacts/refs/heads/process-replay/"
+# Can be overridden with CI_ARTIFACTS_BASE_URL environment variable
+# Example: export CI_ARTIFACTS_BASE_URL="https://raw.githubusercontent.com/your-username/ci-artifacts/refs/heads/process-replay/"
+BASE_URL = os.environ.get("CI_ARTIFACTS_BASE_URL", "https://raw.githubusercontent.com/commaai/ci-artifacts/refs/heads/process-replay/")
 REF_COMMIT_FN = os.path.join(PROC_REPLAY_DIR, "ref_commit")
-# modeld/dmonitoringmodeld: require GPU/vision hardware
-# plannerd: reference logs need regeneration due to E2E neural execution changes
-EXCLUDED_PROCS = {"modeld", "dmonitoringmodeld", "plannerd"}
+EXCLUDED_PROCS = {"modeld", "dmonitoringmodeld"}
 
 
 def run_test_process(data):
