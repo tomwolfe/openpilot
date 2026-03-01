@@ -76,7 +76,7 @@ class LongitudinalPlanner:
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
-    
+
     # E2E trajectory storage
     self.e2e_v_trajectory = np.zeros(CONTROL_N)
     self.e2e_a_trajectory = np.zeros(CONTROL_N)
@@ -106,11 +106,11 @@ class LongitudinalPlanner:
   def update(self, sm, e2e_x=None, e2e_v=None, e2e_a=None, e2e_prob=0.0, e2e_valid=False):
     """
     Update the longitudinal planner with E2E trajectory from the model.
-    
+
     In ExperimentalMode, the MPC acts as a safety/jerk filter for the model's E2E output,
     heavily weighting the model's predicted velocity and acceleration rather than calculating
     targets based on radar/lead-car distance.
-    
+
     Args:
       sm: SubMaster with current state
       e2e_x: E2E position trajectory (interpolated to MPC timesteps)
@@ -166,25 +166,25 @@ class LongitudinalPlanner:
     # Store E2E trajectory for use in MPC
     self.e2e_valid = e2e_valid and e2e_v is not None and e2e_a is not None
     self.e2e_prob = e2e_prob if e2e_prob is not None else 0.0
-    
+
     if self.e2e_valid:
       self.e2e_v_trajectory = e2e_v
       self.e2e_a_trajectory = e2e_a
-    
+
     # In ExperimentalMode, configure MPC to follow E2E trajectory
     is_experimental = sm['selfdriveState'].experimentalMode
-    
+
     if is_experimental and self.e2e_valid:
       # Set E2E-specific cost weights - heavily weight model's predictions
       self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
-      
+
       # Pass E2E trajectory to MPC for guidance
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
                            e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory)
     else:
       # Standard mode - use traditional radar/lead-car based planning
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
-    
+
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
                     e2e_mode=is_experimental and self.e2e_valid,
@@ -216,12 +216,12 @@ class LongitudinalPlanner:
       # Calculate minimum safe deceleration based on radar distance
       lead_d_rel = sm['radarState'].leadOne.dRel
       lead_v_rel = sm['radarState'].leadOne.vLead - v_ego
-      
+
       # Simple safety calculation: ensure we can stop before hitting lead
       if lead_d_rel > 0 and lead_v_rel < 0:  # Lead is closer and approaching
         min_safe_decel = (v_ego**2 - lead_v_rel**2) / (2 * lead_d_rel * SAFETY_FLOOR_MARGIN)
         min_safe_decel = max(min_safe_decel, ACCEL_MIN)
-        
+
         # Only override if model is under-braking (not braking enough)
         if output_a_target_e2e > min_safe_decel:
           output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
@@ -240,21 +240,21 @@ class LongitudinalPlanner:
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
-  
+
   def _set_e2e_weights(self, prev_accel_constraint=True, personality=None):
     """
     Set cost weights for E2E mode where MPC acts as safety/jerk filter.
-    
+
     In E2E mode, the MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar.
     """
     jerk_factor = 1.0  # Use default jerk factor
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
-    
+
     # E2E-specific weights that prioritize following model predictions
     cost_weights = [
       E2E_X_EGO_COST,    # Position cost - follow model's trajectory
-      E2E_V_EGO_COST,    # Velocity cost - match model's velocity  
+      E2E_V_EGO_COST,    # Velocity cost - match model's velocity
       E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
       jerk_factor * a_change_cost,
       jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers
@@ -284,7 +284,7 @@ class LongitudinalPlanner:
     longitudinalPlan.shouldStop = bool(self.output_should_stop)
     longitudinalPlan.allowBrake = True
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)
-    
+
     # Include E2E-specific information in the plan message
     longitudinalPlan.e2eAcceleration = float(self.e2e_a_trajectory[0]) if self.e2e_valid else 0.0
     longitudinalPlan.modelConfidence = float(self.e2e_prob) if self.e2e_valid else 0.0

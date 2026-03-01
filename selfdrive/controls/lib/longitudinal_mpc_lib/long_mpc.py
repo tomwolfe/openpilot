@@ -255,11 +255,11 @@ class LongitudinalMpc:
     self.time_linearization = 0.0
     self.time_integrator = 0.0
     self.x0 = np.zeros(X_DIM)
-    
+
     # E2E mode references
     self.e2e_v_ref = None
     self.e2e_a_ref = None
-    
+
     self.set_weights()
 
   def set_cost_weights(self, cost_weights, constraint_cost_weights):
@@ -282,10 +282,10 @@ class LongitudinalMpc:
                   e2e_mode=False, e2e_v=None, e2e_a=None):
     """
     Set cost weights for the MPC optimizer.
-    
+
     In E2E mode, the cost function heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar/lead-car distance.
-    
+
     Args:
       prev_accel_constraint: Whether to penalize acceleration changes
       personality: Longitudinal personality setting
@@ -295,16 +295,16 @@ class LongitudinalMpc:
     """
     jerk_factor = get_jerk_factor(personality)
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
-    
+
     if e2e_mode:
       # E2E mode: heavily weight following model's predictions
-      cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST, 
+      cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
     else:
       # Standard mode: traditional weights
-      cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST, 
+      cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
-    
+
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.set_cost_weights(cost_weights, constraint_cost_weights)
 
@@ -351,10 +351,10 @@ class LongitudinalMpc:
              e2e_mode=False, e2e_v=None, e2e_a=None):
     """
     Update the MPC optimizer with current state and targets.
-    
+
     In E2E mode, the MPC uses the model's predicted velocity and acceleration
     as reference targets, acting as a safety/jerk filter rather than a navigator.
-    
+
     Args:
       radarstate: Radar state with lead car information
       v_cruise: Cruise control target speed
@@ -385,18 +385,18 @@ class LongitudinalMpc:
     cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
-    
+
     # In E2E mode, use model's trajectory as primary reference
     if e2e_mode and e2e_v is not None and e2e_a is not None:
       # E2E mode: model's trajectory is the primary target
       # Set source to e2e and use model's velocity/acceleration as reference
       self.source = LongitudinalPlanSource.e2e
-      
+
       # Set up reference trajectory from E2E model output
       # The MPC will act as a safety filter, ensuring smoothness and feasibility
       self.e2e_v_ref = e2e_v
       self.e2e_a_ref = e2e_a
-      
+
       # In E2E mode, we still need obstacles for safety constraints
       # but the cost function will prioritize following E2E trajectory
       self.params[:,2] = np.min(x_obstacles, axis=1)  # Safety floor from radar
@@ -408,7 +408,7 @@ class LongitudinalMpc:
       self.params[:,2] = np.min(x_obstacles, axis=1)
 
     self.yref[:,:] = 0.0
-    
+
     # In E2E mode, set reference trajectory to model's predictions
     if e2e_mode and self.e2e_v_ref is not None and self.e2e_a_ref is not None:
       # Set yref to track model's velocity and acceleration
@@ -419,7 +419,7 @@ class LongitudinalMpc:
       # Terminal cost
       self.yref[N, 2] = self.e2e_v_ref[-1] if len(self.e2e_v_ref) > 0 else 0.0
       self.yref[N, 3] = self.e2e_a_ref[-1] if len(self.e2e_a_ref) > 0 else 0.0
-    
+
     for i in range(N):
       self.solver.set(i, "yref", self.yref[i])
     self.solver.set(N, "yref", self.yref[N][:COST_E_DIM])
