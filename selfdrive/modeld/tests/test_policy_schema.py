@@ -9,7 +9,7 @@ Tests the new multi-hypothesis policy output format:
 import numpy as np
 import pytest
 from cereal import log
-from selfdrive.modeld.constants import ModelConstants, Plan, Policy
+from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Policy
 
 
 class TestPolicyConstants:
@@ -62,7 +62,7 @@ class TestPolicySlices:
   def test_get_component_slice(self):
     """Test component slice calculation across all timesteps."""
     for hyp_idx in range(ModelConstants.PLAN_HYPOTHESES_COUNT):
-      for component_name, component_slice in [
+      for _component_name, component_slice in [
         ('POSITION', Plan.POSITION),
         ('VELOCITY', Plan.VELOCITY),
         ('ACCELERATION', Plan.ACCELERATION),
@@ -244,7 +244,7 @@ class TestPolicyMessagePopulation:
     assert abs(total_prob - 1.0) < 1e-6
 
     # Validate trajectory data
-    for i, h in enumerate(msg.policy):
+    for _i, h in enumerate(msg.policy):
       assert len(h.trajectory.x) == n_points
       assert len(h.velocity.x) == n_points
       assert len(h.acceleration.x) == n_points
@@ -272,7 +272,3 @@ class TestPolicyMessagePopulation:
     # Both should coexist
     assert len(msg.position.x) == n_points
     assert len(msg.policy) == 1
-
-
-if __name__ == '__main__':
-  pytest.main([__file__, '-v'])

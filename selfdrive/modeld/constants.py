@@ -127,7 +127,7 @@ class Policy:
     return slice(start, end)
 
   @staticmethod
-  def get_component_slice(hypothesis_idx: int, component_slice: slice) -> slice:
+  def get_component_slice(hypothesis_idx: int, component_slice: slice) -> np.ndarray:
     """
     Returns a slice for extracting a specific component (e.g., POSITION, VELOCITY)
     across all timesteps for a given hypothesis.
