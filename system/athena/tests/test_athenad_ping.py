@@ -8,13 +8,13 @@ from openpilot.common.params import Params
 from openpilot.common.timeout import Timeout
 from openpilot.system.athena import athenad
 from openpilot.system.manager.helpers import write_onroad_params
-from openpilot.system.hardware import TICI
+from openpilot.system.hardware import HARDWARE
 
 TIMEOUT_TOLERANCE = 20  # seconds
 
 
 def wifi_radio(on: bool) -> None:
-  if not TICI:
+  if not HARDWARE.capabilities.has_modem:
     return
   print(f"wifi {'on' if on else 'off'}")
   subprocess.run(["nmcli", "radio", "wifi", "on" if on else "off"], check=True)

@@ -2,6 +2,14 @@ import re
 from pathlib import Path
 Import('env', 'arch', 'common')
 
+# Update translations before building UI assets
+update_translations_script = File("#selfdrive/ui/update_translations.py")
+env.Command(
+  target=File("#selfdrive/ui/translations/app.pot"),
+  source=[update_translations_script] + Glob("#selfdrive/ui/**/*.py"),
+  action=f"python3 {update_translations_script}",
+)
+
 # build the fonts
 generator = File("#selfdrive/assets/fonts/process.py")
 source_files = Glob("#selfdrive/assets/fonts/*.ttf") + Glob("#selfdrive/assets/fonts/*.otf")

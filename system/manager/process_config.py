@@ -4,7 +4,7 @@ import platform
 
 from cereal import car
 from openpilot.common.params import Params
-from openpilot.system.hardware import PC, TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
@@ -74,12 +74,12 @@ procs = [
   PythonProcess("proclogd", "system.proclogd", only_onroad, enabled=platform.system() != "Darwin"),
   PythonProcess("journald", "system.journald", only_onroad, platform.system() != "Darwin"),
   PythonProcess("micd", "system.micd", iscar),
-  PythonProcess("timed", "system.timed", always_run, enabled=not PC),
+  PythonProcess("timed", "system.timed", always_run, enabled=not HARDWARE.capabilities.is_simulator),
 
   PythonProcess("modeld", "selfdrive.modeld.modeld", only_onroad),
-  PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
+  PythonProcess("dmonitoringmodeld", "selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not HARDWARE.capabilities.is_simulator)),
 
-  PythonProcess("sensord", "system.sensord.sensord", only_onroad, enabled=not PC),
+  PythonProcess("sensord", "system.sensord.sensord", only_onroad, enabled=not HARDWARE.capabilities.is_simulator),
   PythonProcess("ui", "selfdrive.ui.ui", always_run, restart_if_crash=True),
   PythonProcess("soundd", "selfdrive.ui.soundd", driverview),
   PythonProcess("locationd", "selfdrive.locationd.locationd", only_onroad),
@@ -91,13 +91,13 @@ procs = [
   PythonProcess("selfdrived", "selfdrive.selfdrived.selfdrived", only_onroad),
   PythonProcess("card", "selfdrive.car.card", only_onroad),
   PythonProcess("deleter", "system.loggerd.deleter", always_run),
-  PythonProcess("dmonitoringd", "selfdrive.monitoring.dmonitoringd", driverview, enabled=(WEBCAM or not PC)),
-  PythonProcess("qcomgpsd", "system.qcomgpsd.qcomgpsd", qcomgps, enabled=TICI),
+  PythonProcess("dmonitoringd", "selfdrive.monitoring.dmonitoringd", driverview, enabled=(WEBCAM or not HARDWARE.capabilities.is_simulator)),
+  PythonProcess("qcomgpsd", "system.qcomgpsd.qcomgpsd", qcomgps, enabled=HARDWARE.capabilities.has_modem),
   PythonProcess("pandad", "selfdrive.pandad.pandad", always_run),
   PythonProcess("paramsd", "selfdrive.locationd.paramsd", only_onroad),
   PythonProcess("lagd", "selfdrive.locationd.lagd", only_onroad),
-  PythonProcess("ubloxd", "system.ubloxd.ubloxd", ublox, enabled=TICI),
-  PythonProcess("pigeond", "system.ubloxd.pigeond", ublox, enabled=TICI),
+  PythonProcess("ubloxd", "system.ubloxd.ubloxd", ublox, enabled=HARDWARE.capabilities.has_modem),
+  PythonProcess("pigeond", "system.ubloxd.pigeond", ublox, enabled=HARDWARE.capabilities.has_modem),
   PythonProcess("plannerd", "selfdrive.controls.plannerd", not_long_maneuver),
   PythonProcess("maneuversd", "tools.longitudinal_maneuvers.maneuversd", long_maneuver),
   PythonProcess("radard", "selfdrive.controls.radard", only_onroad),

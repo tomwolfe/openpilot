@@ -4,7 +4,7 @@ import random
 import subprocess
 
 from panda import Panda
-from openpilot.system.hardware import TICI, HARDWARE
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.hardware.tici.amplifier import Amplifier
 
 
@@ -12,7 +12,7 @@ class TestAmplifier:
 
   @classmethod
   def setup_class(cls):
-    if not TICI:
+    if not HARDWARE.capabilities.has_internal_panda:
       pytest.skip()
 
   def setup_method(self):

@@ -304,8 +304,8 @@ def run_receiving(duration: int = 0):
 
 
 def main():
-  from openpilot.system.hardware import TICI
-  assert TICI, "unsupported hardware for pigeond"
+  from openpilot.system.hardware import HARDWARE
+  assert HARDWARE.capabilities.has_modem, "unsupported hardware for pigeond"
   run_receiving()
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import pyray as rl
 
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from openpilot.common.swaglog import cloudlog
-from openpilot.system.hardware import HARDWARE, TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.egl import init_egl, create_egl_image, destroy_egl_image, bind_egl_image_to_texture, EGLImage
 from openpilot.system.ui.widgets import Widget
@@ -82,7 +82,7 @@ class CameraView(Widget):
     self._texture_needs_update = True
     self.last_connection_attempt: float = 0.0
     self.shader = rl.load_shader_from_memory(VERTEX_SHADER, FRAME_FRAGMENT_SHADER)
-    self._texture1_loc: int = rl.get_shader_location(self.shader, "texture1") if not TICI else -1
+    self._texture1_loc: int = rl.get_shader_location(self.shader, "texture1") if not HARDWARE.capabilities.has_egl_support else -1
 
     self.frame: VisionBuf | None = None
     self.texture_y: rl.Texture | None = None
@@ -337,7 +337,7 @@ class CameraView(Widget):
 
   def _initialize_textures(self):
     self._clear_textures()
-    if not TICI:
+    if not HARDWARE.capabilities.has_egl_support:
       self.texture_y = rl.load_texture_from_image(rl.Image(None, int(self.client.stride),
         int(self.client.height), 1, rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_GRAYSCALE))
       self.texture_uv = rl.load_texture_from_image(rl.Image(None, int(self.client.stride // 2),

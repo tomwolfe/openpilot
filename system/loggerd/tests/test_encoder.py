@@ -12,7 +12,7 @@ from tqdm import trange
 
 from openpilot.common.params import Params
 from openpilot.common.timeout import Timeout
-from openpilot.system.hardware import TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.tools.lib.logreader import LogReader
 from openpilot.system.hardware.hw import Paths
@@ -89,7 +89,7 @@ class TestEncoder:
         # TODO: this ffprobe call is really slow
         # get width and check frame count
         cmd = f"ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets,width -of csv=p=0 {file_path}"
-        if TICI:
+        if HARDWARE.capabilities.is_agnos:
           cmd = "LD_LIBRARY_PATH=/usr/local/lib " + cmd
 
         expected_frames = fps * SEGMENT_LENGTH

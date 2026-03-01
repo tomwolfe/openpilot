@@ -16,7 +16,7 @@ from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
 from openpilot.common.timeout import Timeout
 from openpilot.system.hardware.hw import Paths
-from openpilot.system.hardware import TICI
+from openpilot.system.hardware import HARDWARE
 from openpilot.system.loggerd.xattr_cache import getxattr
 from openpilot.system.loggerd.deleter import PRESERVE_ATTR_NAME, PRESERVE_ATTR_VALUE
 from openpilot.system.manager.process_config import managed_processes
@@ -227,7 +227,7 @@ class TestLoggerd:
     assert abs(boot.wallTimeNanos - time.time_ns()) < 5*1e9 # within 5s
     assert boot.launchLog == launch_log
 
-    if TICI:
+    if HARDWARE.capabilities.has_core_affinity_control:
       for fn in ["console-ramoops", "pmsg-ramoops-0"]:
         path = Path(os.path.join("/sys/fs/pstore/", fn))
         if path.is_file():

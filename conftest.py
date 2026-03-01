@@ -5,7 +5,7 @@ import pytest
 
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.system.manager import manager
-from openpilot.system.hardware import TICI, HARDWARE
+from openpilot.system.hardware import HARDWARE
 
 # TODO: pytest-cpp doesn't support FAIL, and we need to create test translations in sessionstart
 # pending https://github.com/pytest-dev/pytest-cpp/pull/147
@@ -88,7 +88,7 @@ def pytest_collection_modifyitems(config, items):
   skipper = pytest.mark.skip(reason="Skipping tici test on PC")
   for item in items:
     if "tici" in item.keywords:
-      if not TICI:
+      if not HARDWARE.capabilities.has_internal_panda:
         item.add_marker(skipper)
       else:
         item.fixturenames.append('tici_setup_fixture')
