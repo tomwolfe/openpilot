@@ -53,6 +53,9 @@ class ModelConstants:
   PLAN_MHP_SELECTION = 1
   LEAD_MHP_SELECTION = 3
 
+  # Phase 1 E2E 1.0: Standardized policy schema
+  PLAN_HYPOTHESES_COUNT = 5  # Number of trajectory hypotheses in policy output
+
   FCW_THRESHOLD_5MS2_HIGH = 0.15
   FCW_THRESHOLD_5MS2_LOW = 0.05
   FCW_THRESHOLD_3MS2 = 0.7
@@ -85,3 +88,57 @@ class Meta:
   BRAKE_PRESS = slice(32, 55, 4)
   LEFT_BLINKER = slice(33, 55, 4)
   RIGHT_BLINKER = slice(34, 55, 4)
+
+
+# Phase 1 E2E 1.0: Multi-hypothesis policy slices
+# Provides indexing utilities for raw model output tensor containing multiple trajectory hypotheses
+# Tensor shape: (N_HYPOTHESES, N_TIMESTEPS, PLAN_WIDTH) or flattened (N_HYPOTHESES * N_TIMESTEPS * PLAN_WIDTH)
+class Policy:
+  # Number of hypotheses in the policy output
+  N_HYPOTHESES = ModelConstants.PLAN_HYPOTHESES_COUNT
+
+  # Slice indices for extracting individual hypothesis components
+  # Each hypothesis contains the same structure as Plan
+  POSITION = Plan.POSITION
+  VELOCITY = Plan.VELOCITY
+  ACCELERATION = Plan.ACCELERATION
+  T_FROM_CURRENT_EULER = Plan.T_FROM_CURRENT_EULER
+  ORIENTATION_RATE = Plan.ORIENTATION_RATE
+
+  @staticmethod
+  def get_hypothesis_slice(hypothesis_idx: int) -> slice:
+    """
+    Returns a slice for extracting a specific hypothesis from a flattened tensor.
+    Tensor layout: [hyp0_t0, hyp0_t1, ..., hyp0_tN, hyp1_t0, ..., hypN_tN]
+    Each timestep has PLAN_WIDTH (15) values.
+    """
+    start = hypothesis_idx * ModelConstants.IDX_N * ModelConstants.PLAN_WIDTH
+    end = start + ModelConstants.IDX_N * ModelConstants.PLAN_WIDTH
+    return slice(start, end)
+
+  @staticmethod
+  def get_timestep_slice(hypothesis_idx: int, timestep_idx: int) -> slice:
+    """
+    Returns a slice for extracting a specific timestep from a specific hypothesis.
+    Each timestep has PLAN_WIDTH (15) values.
+    """
+    start = (hypothesis_idx * ModelConstants.IDX_N + timestep_idx) * ModelConstants.PLAN_WIDTH
+    end = start + ModelConstants.PLAN_WIDTH
+    return slice(start, end)
+
+  @staticmethod
+  def get_component_slice(hypothesis_idx: int, component_slice: slice) -> slice:
+    """
+    Returns a slice for extracting a specific component (e.g., POSITION, VELOCITY)
+    across all timesteps for a given hypothesis.
+    """
+    base = hypothesis_idx * ModelConstants.IDX_N * ModelConstants.PLAN_WIDTH
+    # Build list of indices for the component across all timesteps
+    indices = []
+    for t in range(ModelConstants.IDX_N):
+      timestep_offset = t * ModelConstants.PLAN_WIDTH
+      comp_start = base + timestep_offset + component_slice.start
+      comp_end = base + timestep_offset + component_slice.stop
+      indices.extend(range(comp_start, comp_end))
+    # Return as a numpy array for advanced indexing
+    return np.array(indices, dtype=np.int32)

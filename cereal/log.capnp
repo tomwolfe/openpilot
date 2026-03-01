@@ -1068,6 +1068,7 @@ struct ModelDataV2 {
   rawPredictions @16 :Data;
 
   # predicted future position, orientation, etc..
+  # Deprecated: use policy instead (single hypothesis from multi-hypothesis output)
   position @4 :XYZTData;
   orientation @5 :XYZTData;
   velocity @6 :XYZTData;
@@ -1093,6 +1094,9 @@ struct ModelDataV2 {
 
   # e2e lateral planner
   action @26: Action;
+
+  # multi-hypothesis policy output (Phase 1 E2E 1.0)
+  policy @27 :List(PolicyHypothesis);
 
   gpuExecutionTimeDEPRECATED @17 :Float32;
   navEnabledDEPRECATED @22 :Bool;
@@ -1185,6 +1189,18 @@ struct ModelDataV2 {
     desiredCurvature @0 :Float32;
     desiredAcceleration @1 :Float32;
     shouldStop @2 :Bool;
+  }
+
+  # Policy hypothesis for multi-path trajectory prediction (Phase 1 E2E 1.0)
+  struct PolicyHypothesis {
+    # trajectory position over time (matches Plan.POSITION slice: x, y, z)
+    trajectory @0 :XYZTData;
+    # trajectory velocity over time (matches Plan.VELOCITY slice: vx, vy, vz)
+    velocity @1 :XYZTData;
+    # trajectory acceleration over time (matches Plan.ACCELERATION slice: ax, ay, az)
+    acceleration @2 :XYZTData;
+    # model confidence in this hypothesis (should sum to ~1.0 across all hypotheses)
+    probability @3 :Float32;
   }
 }
 
