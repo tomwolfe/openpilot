@@ -7,7 +7,6 @@ Tests the new multi-hypothesis policy output format:
 """
 
 import numpy as np
-import pytest
 from cereal import log
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Policy
 
