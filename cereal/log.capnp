@@ -1272,6 +1272,9 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   allowThrottle @38: Bool;
   allowBrake @39: Bool;
 
+  # E2E mode specific fields (Phase 2 Plannerd Refactoring)
+  e2eAcceleration @40 :Float32;  # Model's predicted acceleration from optimal hypothesis
+  modelConfidence @41 :Float32;  # Model confidence (probability) in the selected hypothesis
 
   solverExecutionTime @35 :Float32;
 
