@@ -465,7 +465,7 @@ CONFIGS = [
     tolerance=NUMPY_TOLERANCE,
     processing_time=0.004,
     main_pub="can",
-    main_pub_driven=True,
+    main_pub_drained=True,
   ),
   ProcessConfig(
     proc_name="radard",
