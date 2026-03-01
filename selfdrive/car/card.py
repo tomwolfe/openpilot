@@ -207,12 +207,16 @@ class Car:
     co_send.carOutput.actuatorsOutput = self.last_actuators_output
     self.pm.send('carOutput', co_send)
 
+    # Get car-specific events from opendbc
+    event_names = self.CI.get_events(CS, self.CS_prev, self.sm['carControl'])
+
     # kick off controlsd step while we actuate the latest carControl packet
     cs_send = messaging.new_message('carState')
     cs_send.valid = CS.canValid
     cs_send.carState = CS
     cs_send.carState.canErrorCounter = self.can_rcv_cum_timeout_counter
     cs_send.carState.cumLagMs = -self.rk.remaining * 1000.
+    cs_send.carState.eventNames = event_names
     self.pm.send('carState', cs_send)
 
     if RD is not None:
