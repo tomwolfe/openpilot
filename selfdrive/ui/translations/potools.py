@@ -256,8 +256,36 @@ def extract_strings(files: list[str], basedir: str) -> list[POEntry]:
 
 # ──── POT generation ────
 
+def _entries_equal(a: list[POEntry], b: list[POEntry]) -> bool:
+  """Check if two entry lists are equal (ignoring timestamps and source refs order)."""
+  if len(a) != len(b):
+    return False
+  for ea, eb in zip(a, b):
+    if ea.msgid != eb.msgid or ea.msgid_plural != eb.msgid_plural:
+      return False
+    if sorted(ea.source_refs) != sorted(eb.source_refs):
+      return False
+    if sorted(ea.flags) != sorted(eb.flags):
+      return False
+  return True
+
+
 def generate_pot(entries: list[POEntry], pot_path: str | Path) -> None:
-  """Generate a .pot template file from extracted entries."""
+  """Generate a .pot template file from extracted entries.
+  
+  Only writes if entries have actually changed (ignoring timestamps).
+  """
+  pot_path = Path(pot_path)
+  
+  # Sort entries for consistent comparison
+  entries = sorted(entries, key=lambda e: e.msgid)
+  
+  # Check if existing file has same entries (ignoring timestamp)
+  if pot_path.exists():
+    _, existing_entries = parse_po(pot_path)
+    if _entries_equal(entries, existing_entries):
+      return  # No change, skip write to keep timestamp stable
+  
   now = datetime.now(UTC).strftime('%Y-%m-%d %H:%M%z')
   header = POEntry(
     comments=[
@@ -338,8 +366,20 @@ def init_po(pot_path: str | Path, po_path: str | Path, language: str) -> None:
 
 # ──── PO merge (replaces msgmerge) ────
 
+def _po_entries_equal(a: POEntry, b: POEntry) -> bool:
+  """Check if two PO entries are equal (for merge comparison)."""
+  return (a.msgid == b.msgid and
+          a.msgid_plural == b.msgid_plural and
+          a.msgstr == b.msgstr and
+          a.msgstr_plural == b.msgstr_plural)
+
+
 def merge_po(po_path: str | Path, pot_path: str | Path) -> None:
-  """Update a .po file with entries from a .pot template (replaces msgmerge --update)."""
+  """Update a .po file with entries from a .pot template (replaces msgmerge --update).
+  
+  Only writes if entries have actually changed.
+  """
+  po_path = Path(po_path)
   po_header, po_entries = parse_po(po_path)
   _, pot_entries = parse_po(pot_path)
 
@@ -359,4 +399,11 @@ def merge_po(po_path: str | Path, pot_path: str | Path) -> None:
       merged.append(pot_e)
 
   merged.sort(key=lambda e: e.msgid)
+  
+  # Check if content actually changed before writing
+  if len(merged) == len(po_entries):
+    all_equal = all(_po_entries_equal(m, p) for m, p in zip(merged, po_entries))
+    if all_equal:
+      return  # No change, skip write
+  
   write_po(po_path, po_header, merged)
