@@ -7,7 +7,7 @@ from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.modeld.constants import ModelConstants
+from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
@@ -33,6 +33,13 @@ E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuver
 # Safety floor parameters - radar-based distance as minimum safe distance
 SAFETY_FLOOR_MARGIN = 0.5  # Additional margin for safety floor
 MIN_BRAKE_SAFETY_FACTOR = 1.2  # Model must brake at least this much before MPC overrides
+
+# Model confidence thresholds for Hybrid E2E mode
+MODEL_CONFIDENCE_HIGH = 0.7  # Use full E2E when model confidence >= this
+MODEL_CONFIDENCE_LOW = 0.3   # Use traditional MPC when model confidence < this
+
+# Brake disengage probability threshold for reducing lead car cost
+BRAKE_DISENGAGE_HIGH_CONF = 0.5  # Reduce lead cost when brake disengage prob > this
 
 
 # Lookup table for turns
@@ -77,14 +84,27 @@ class LongitudinalPlanner:
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
 
-    # E2E trajectory storage
+    # Model-predicted acceleration trajectory (Phase 3: Direct Longitudinal Control)
+    self.model_a_trajectory = np.zeros(CONTROL_N)
+    self.model_v_trajectory = np.zeros(CONTROL_N)
+    self.model_confidence = 0.0
+    self.model_valid = False
+
+    # E2E trajectory storage (from policy hypotheses)
     self.e2e_v_trajectory = np.zeros(CONTROL_N)
     self.e2e_a_trajectory = np.zeros(CONTROL_N)
     self.e2e_prob = 0.0
     self.e2e_valid = False
 
+    # Brake disengage probability for lead car cost weighting
+    self.brake_disengage_prob = 0.0
+
   @staticmethod
   def parse_model(model_msg):
+    """
+    Extract model predictions using Plan slices from modeld/constants.py.
+    Returns position, velocity, acceleration, jerk, throttle_prob, and brake_disengage_prob.
+    """
     if (len(model_msg.position.x) == ModelConstants.IDX_N and
       len(model_msg.velocity.x) == ModelConstants.IDX_N and
       len(model_msg.acceleration.x) == ModelConstants.IDX_N):
@@ -97,19 +117,31 @@ class LongitudinalPlanner:
       v = np.zeros(len(T_IDXS_MPC))
       a = np.zeros(len(T_IDXS_MPC))
       j = np.zeros(len(T_IDXS_MPC))
+
+    # Extract throttle probability
     if len(model_msg.meta.disengagePredictions.gasPressProbs) > 1:
       throttle_prob = model_msg.meta.disengagePredictions.gasPressProbs[1]
     else:
       throttle_prob = 1.0
-    return x, v, a, j, throttle_prob
+
+    # Extract brake disengage probability for lead car cost weighting (Phase 3)
+    brake_disengage_prob = 0.0
+    if len(model_msg.meta.disengagePredictions.brakePressProbs) > 0:
+      # Use average of brake disengage probabilities over the prediction horizon
+      brake_disengage_prob = float(np.mean(model_msg.meta.disengagePredictions.brakePressProbs))
+
+    return x, v, a, j, throttle_prob, brake_disengage_prob
 
   def update(self, sm, e2e_x=None, e2e_v=None, e2e_a=None, e2e_prob=0.0, e2e_valid=False):
     """
     Update the longitudinal planner with E2E trajectory from the model.
 
-    In ExperimentalMode, the MPC acts as a safety/jerk filter for the model's E2E output,
-    heavily weighting the model's predicted velocity and acceleration rather than calculating
-    targets based on radar/lead-car distance.
+    Phase 3: Direct Longitudinal Control - Model-First Logic
+    
+    The model's predicted acceleration is used as the primary input for the MPC,
+    making "End-to-End" (E2E) longitudinal the default behavior. The v_cruise acts
+    only as a hard ceiling, and the lead car cost is reduced when the model shows
+    high confidence in its stopping prediction.
 
     Args:
       sm: SubMaster with current state
@@ -151,7 +183,11 @@ class LongitudinalPlanner:
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
-    _, _, _, _, throttle_prob = self.parse_model(sm['modelV2'])
+    
+    # Phase 3: Extract model acceleration using Plan.ACCELERATION slice
+    _, model_v, model_a, _, throttle_prob, brake_disengage_prob = self.parse_model(sm['modelV2'])
+    self.brake_disengage_prob = brake_disengage_prob
+    
     # Don't clip at low speeds since throttle_prob doesn't account for creep
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
 
@@ -171,25 +207,50 @@ class LongitudinalPlanner:
       self.e2e_v_trajectory = e2e_v
       self.e2e_a_trajectory = e2e_a
 
-    # In ExperimentalMode, configure MPC to follow E2E trajectory
-    is_experimental = sm['selfdriveState'].experimentalMode
+    # Phase 3: Store model-predicted acceleration trajectory (always available from modelV2)
+    self.model_v_trajectory = model_v
+    self.model_a_trajectory = model_a
+    self.model_valid = True
+    # Model confidence combines E2E probability and brake disengage confidence
+    self.model_confidence = self.e2e_prob if self.e2e_valid else 0.5
 
-    if is_experimental and self.e2e_valid:
+    # Phase 3: Hybrid E2E - Model acceleration is primary, v_cruise is ceiling
+    # Determine if we should use full E2E mode or hybrid mode based on model confidence
+    is_experimental = sm['selfdriveState'].experimentalMode
+    
+    # Use E2E mode when:
+    # 1. Experimental mode is enabled AND E2E trajectory is valid, OR
+    # 2. Model confidence is high (>= MODEL_CONFIDENCE_HIGH) regardless of experimental mode
+    use_e2e_mode = (is_experimental and self.e2e_valid) or (self.model_confidence >= MODEL_CONFIDENCE_HIGH)
+    
+    # Calculate lead car cost reduction factor based on brake disengage probability
+    # When model is confident about stopping (high brake disengage prob), reduce lead car cost
+    lead_cost_factor = 1.0
+    if self.brake_disengage_prob > BRAKE_DISENGAGE_HIGH_CONF:
+      # Reduce lead car cost when model predicts braking
+      lead_cost_factor = 0.3  # Significantly reduce lead car influence
+
+    if use_e2e_mode:
       # Set E2E-specific cost weights - heavily weight model's predictions
       self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
 
       # Pass E2E trajectory to MPC for guidance
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
-                           e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory)
+                           e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory,
+                           lead_cost_factor=lead_cost_factor)
     else:
-      # Standard mode - use traditional radar/lead-car based planning
-      self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+      # Hybrid mode - use model acceleration as primary with traditional weights
+      # Model acceleration seeds the MPC cost function, v_cruise acts as ceiling
+      self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
+                           model_a=self.model_a_trajectory, lead_cost_factor=lead_cost_factor)
 
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
-                    e2e_mode=is_experimental and self.e2e_valid,
+                    e2e_mode=use_e2e_mode,
                     e2e_v=self.e2e_v_trajectory if self.e2e_valid else None,
-                    e2e_a=self.e2e_a_trajectory if self.e2e_valid else None)
+                    e2e_a=self.e2e_a_trajectory if self.e2e_valid else None,
+                    model_a=self.model_a_trajectory,
+                    model_v=self.model_v_trajectory)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
@@ -211,28 +272,39 @@ class LongitudinalPlanner:
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
-    # Safety floor: if lead car present, ensure we don't under-brake compared to radar-based distance
-    if sm['radarState'].leadOne.status and self.e2e_valid:
-      # Calculate minimum safe deceleration based on radar distance
+    # Phase 3: Safety floor with model-first logic
+    # When model shows high confidence in stopping, prioritize model's acceleration
+    # Otherwise, use radar-based safety floor
+    if sm['radarState'].leadOne.status:
       lead_d_rel = sm['radarState'].leadOne.dRel
       lead_v_rel = sm['radarState'].leadOne.vLead - v_ego
 
-      # Simple safety calculation: ensure we can stop before hitting lead
+      # Calculate minimum safe deceleration based on radar distance
       if lead_d_rel > 0 and lead_v_rel < 0:  # Lead is closer and approaching
         min_safe_decel = (v_ego**2 - lead_v_rel**2) / (2 * lead_d_rel * SAFETY_FLOOR_MARGIN)
         min_safe_decel = max(min_safe_decel, ACCEL_MIN)
 
-        # Only override if model is under-braking (not braking enough)
-        if output_a_target_e2e > min_safe_decel:
-          output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
+        # In E2E mode with high model confidence, trust model more
+        if use_e2e_mode and self.model_confidence >= MODEL_CONFIDENCE_HIGH:
+          # Only apply safety floor if model is significantly under-braking
+          if output_a_target_e2e > min_safe_decel * 1.5:
+            output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
+        else:
+          # Standard safety floor application
+          if output_a_target_e2e > min_safe_decel:
+            output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
 
-    if is_experimental:
+    # Phase 3: Model-first output selection
+    # In E2E mode or when model confidence is high, use model's acceleration
+    # Otherwise, fall back to MPC output
+    if use_e2e_mode or self.model_confidence >= MODEL_CONFIDENCE_HIGH:
       # In E2E mode, use model's acceleration with safety floor applied
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
+      # Hybrid mode: blend model and MPC, but prefer MPC for safety
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
 
@@ -276,6 +348,7 @@ class LongitudinalPlanner:
     longitudinalPlan.accels = self.a_desired_trajectory.tolist()
     longitudinalPlan.jerks = self.j_desired_trajectory.tolist()
 
+    # Phase 3: Always report lead car status for UI display
     longitudinalPlan.hasLead = sm['radarState'].leadOne.status
     longitudinalPlan.longitudinalPlanSource = self.mpc.source
     longitudinalPlan.fcw = self.fcw
@@ -285,8 +358,13 @@ class LongitudinalPlanner:
     longitudinalPlan.allowBrake = True
     longitudinalPlan.allowThrottle = bool(self.allow_throttle)
 
+    # Phase 3: Include model-predicted acceleration for UI predicted path display
+    longitudinalPlan.modelAcceleration = self.model_a_trajectory.tolist() if self.model_valid else []
+    longitudinalPlan.modelVelocity = self.model_v_trajectory.tolist() if self.model_valid else []
+    
     # Include E2E-specific information in the plan message
     longitudinalPlan.e2eAcceleration = float(self.e2e_a_trajectory[0]) if self.e2e_valid else 0.0
-    longitudinalPlan.modelConfidence = float(self.e2e_prob) if self.e2e_valid else 0.0
+    longitudinalPlan.modelConfidence = float(self.model_confidence)
+    longitudinalPlan.brakeDisengageProb = float(self.brake_disengage_prob)
 
     pm.send('longitudinalPlan', plan_send)

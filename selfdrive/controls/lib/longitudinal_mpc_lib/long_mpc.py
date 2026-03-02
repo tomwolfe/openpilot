@@ -50,6 +50,10 @@ E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
 E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
 
+# Hybrid E2E mode weights (Phase 3: Direct Longitudinal Control)
+HYBRID_A_EGO_COST = 6.0   # Weight on following model's acceleration in hybrid mode
+HYBRID_V_EGO_COST = 4.0   # Weight on following model's velocity in hybrid mode
+
 # Fewer timestamps don't hurt performance and lead to
 # much better convergence of the MPC with low iterations
 N = 12
@@ -279,12 +283,15 @@ class LongitudinalMpc:
       self.solver.cost_set(i, 'Zl', Zl)
 
   def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard,
-                  e2e_mode=False, e2e_v=None, e2e_a=None):
+                  e2e_mode=False, e2e_v=None, e2e_a=None, model_a=None, lead_cost_factor=1.0):
     """
     Set cost weights for the MPC optimizer.
 
+    Phase 3: Direct Longitudinal Control - Model-First Logic
+    
     In E2E mode, the cost function heavily weights following the model's predicted
-    velocity and acceleration rather than calculating targets from radar/lead-car distance.
+    velocity and acceleration. In Hybrid mode, the model's acceleration is used
+    as a reference with reduced lead car cost.
 
     Args:
       prev_accel_constraint: Whether to penalize acceleration changes
@@ -292,6 +299,8 @@ class LongitudinalMpc:
       e2e_mode: Whether to use E2E-specific weights
       e2e_v: E2E velocity trajectory (used when e2e_mode=True)
       e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
+      model_a: Model-predicted acceleration trajectory (used in hybrid mode)
+      lead_cost_factor: Factor to reduce lead car cost (0.0-1.0) when model is confident
     """
     jerk_factor = get_jerk_factor(personality)
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
@@ -300,10 +309,24 @@ class LongitudinalMpc:
       # E2E mode: heavily weight following model's predictions
       cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
+    elif model_a is not None:
+      # Hybrid mode (Phase 3): Use model acceleration as primary reference
+      # Reduce obstacle (lead car) cost, increase acceleration tracking cost
+      cost_weights = [
+        X_EGO_OBSTACLE_COST * lead_cost_factor,  # Reduced lead car cost
+        X_EGO_COST,
+        HYBRID_V_EGO_COST,                        # Track model velocity
+        HYBRID_A_EGO_COST,                        # Track model acceleration
+        jerk_factor * a_change_cost,
+        jerk_factor * J_EGO_COST
+      ]
     else:
-      # Standard mode: traditional weights
-      cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST,
-                      jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
+      # Standard mode: traditional weights with optional lead cost reduction
+      cost_weights = [
+        X_EGO_OBSTACLE_COST * lead_cost_factor,
+        X_EGO_COST, V_EGO_COST, A_EGO_COST,
+        jerk_factor * a_change_cost, jerk_factor * J_EGO_COST
+      ]
 
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.set_cost_weights(cost_weights, constraint_cost_weights)
@@ -348,20 +371,25 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard,
-             e2e_mode=False, e2e_v=None, e2e_a=None):
+             e2e_mode=False, e2e_v=None, e2e_a=None, model_a=None, model_v=None):
     """
     Update the MPC optimizer with current state and targets.
 
+    Phase 3: Direct Longitudinal Control - Model-First Logic
+    
     In E2E mode, the MPC uses the model's predicted velocity and acceleration
-    as reference targets, acting as a safety/jerk filter rather than a navigator.
+    as reference targets. In Hybrid mode, the model's acceleration is used
+    as a reference while maintaining safety constraints from radar.
 
     Args:
       radarstate: Radar state with lead car information
-      v_cruise: Cruise control target speed
+      v_cruise: Cruise control target speed (acts as ceiling in Phase 3)
       personality: Longitudinal personality setting
       e2e_mode: Whether to use E2E trajectory following mode
       e2e_v: E2E velocity trajectory (used when e2e_mode=True)
       e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
+      model_a: Model-predicted acceleration trajectory (used in hybrid mode)
+      model_v: Model-predicted velocity trajectory (used in hybrid mode)
     """
     t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
@@ -386,20 +414,22 @@ class LongitudinalMpc:
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
 
-    # In E2E mode, use model's trajectory as primary reference
+    # Phase 3: Model-First Logic
+    # In E2E mode or when model acceleration is provided, use model's trajectory as reference
     if e2e_mode and e2e_v is not None and e2e_a is not None:
       # E2E mode: model's trajectory is the primary target
-      # Set source to e2e and use model's velocity/acceleration as reference
       self.source = LongitudinalPlanSource.e2e
-
-      # Set up reference trajectory from E2E model output
-      # The MPC will act as a safety filter, ensuring smoothness and feasibility
       self.e2e_v_ref = e2e_v
       self.e2e_a_ref = e2e_a
-
-      # In E2E mode, we still need obstacles for safety constraints
-      # but the cost function will prioritize following E2E trajectory
       self.params[:,2] = np.min(x_obstacles, axis=1)  # Safety floor from radar
+    elif model_a is not None and model_v is not None:
+      # Hybrid mode (Phase 3): Use model acceleration/velocity as reference
+      # This makes the car "feel" like the E2E model while being constrained by MPC
+      self.source = LongitudinalPlanSource.e2e  # Use e2e source for UI
+      self.e2e_v_ref = model_v
+      self.e2e_a_ref = model_a
+      # In hybrid mode, still maintain safety floor from radar
+      self.params[:,2] = np.min(x_obstacles, axis=1)
     else:
       # Standard mode: use traditional obstacle-based planning
       self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
@@ -409,8 +439,8 @@ class LongitudinalMpc:
 
     self.yref[:,:] = 0.0
 
-    # In E2E mode, set reference trajectory to model's predictions
-    if e2e_mode and self.e2e_v_ref is not None and self.e2e_a_ref is not None:
+    # Set reference trajectory to model's predictions (E2E or Hybrid mode)
+    if self.e2e_v_ref is not None and self.e2e_a_ref is not None:
       # Set yref to track model's velocity and acceleration
       # yref layout: [obstacle_dist_cost, x_ego, v_ego, a_ego, a_change, jerk]
       for i in range(N):

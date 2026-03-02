@@ -14,9 +14,14 @@ def extract_optimal_path(model_v2_msg):
   """
   Extract the best trajectory from the model's multi-hypothesis predictions.
 
+  Phase 3: Direct Longitudinal Control
+  
   Uses the PLAN_MHP_N and PLAN_MHP_SELECTION constants to identify the hypothesis
   with the highest probability. Returns the selected trajectory's position, velocity,
   acceleration, and confidence level.
+
+  The extracted acceleration is used as the primary input for the MPC, making
+  E2E longitudinal control the default behavior (Hybrid E2E mode).
 
   Args:
     model_v2_msg: The modelV2 message containing policy hypotheses
@@ -79,10 +84,12 @@ def main():
   while True:
     sm.update()
     if sm.updated['modelV2']:
-      # Extract optimal path from multi-hypothesis predictions
+      # Phase 3: Extract optimal path from multi-hypothesis predictions
+      # This trajectory is used as the primary input for Hybrid E2E longitudinal control
       e2e_x, e2e_v, e2e_a, e2e_prob, e2e_valid = extract_optimal_path(sm['modelV2'])
 
       # Pass E2E trajectory to longitudinal planner
+      # The planner uses model acceleration as primary (Hybrid E2E by default)
       longitudinal_planner.update(sm, e2e_x=e2e_x, e2e_v=e2e_v, e2e_a=e2e_a,
                                    e2e_prob=e2e_prob, e2e_valid=e2e_valid)
       longitudinal_planner.publish(sm, pm)
