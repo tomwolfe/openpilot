@@ -25,9 +25,9 @@ ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 
 # E2E mode cost function weights - heavily weight model's predictions
-E2E_X_EGO_COST = 5.0      # Higher weight on following model's position
-E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
-E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
+E2E_X_EGO_COST = 10.0     # Higher weight on obstacle distance for safety
+E2E_V_EGO_COST = 8.0      # Weight on following model's velocity
+E2E_A_EGO_COST = 6.0      # Weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
 
 # Safety floor parameters - radar-based distance as minimum safe distance
@@ -39,7 +39,10 @@ MODEL_CONFIDENCE_HIGH = 0.7  # Use full E2E when model confidence >= this
 MODEL_CONFIDENCE_LOW = 0.3   # Use traditional MPC when model confidence < this
 
 # Brake disengage probability threshold for reducing lead car cost
-BRAKE_DISENGAGE_HIGH_CONF = 0.5  # Reduce lead cost when brake disengage prob > this
+BRAKE_DISENGAGE_HIGH_CONF = 0.8  # Reduce lead cost when brake disengage prob > this (raised from 0.5)
+
+# Lead cost factor settings
+LEAD_COST_FACTOR_MIN = 0.7  # Minimum lead cost factor (was 0.3, too aggressive)
 
 
 # Lookup table for turns
@@ -214,24 +217,19 @@ class LongitudinalPlanner:
     # Model confidence combines E2E probability and brake disengage confidence
     self.model_confidence = self.e2e_prob if self.e2e_valid else 0.5
 
-    # Phase 3: Hybrid E2E - Model acceleration is primary, v_cruise is ceiling
-    # Determine if we should use full E2E mode or hybrid mode based on model confidence
+    # Phase 3: Hybrid E2E - Model acceleration influences MPC but doesn't override
+    # Only use full E2E mode when experimentalMode is explicitly enabled
     is_experimental = sm['selfdriveState'].experimentalMode
-    
-    # Use E2E mode when:
-    # 1. Experimental mode is enabled AND E2E trajectory is valid, OR
-    # 2. Model confidence is high (>= MODEL_CONFIDENCE_HIGH) regardless of experimental mode
-    use_e2e_mode = (is_experimental and self.e2e_valid) or (self.model_confidence >= MODEL_CONFIDENCE_HIGH)
     
     # Calculate lead car cost reduction factor based on brake disengage probability
     # When model is confident about stopping (high brake disengage prob), reduce lead car cost
     lead_cost_factor = 1.0
     if self.brake_disengage_prob > BRAKE_DISENGAGE_HIGH_CONF:
-      # Reduce lead car cost when model predicts braking
-      lead_cost_factor = 0.3  # Significantly reduce lead car influence
+      # Reduce lead car cost when model predicts braking (less aggressive now)
+      lead_cost_factor = LEAD_COST_FACTOR_MIN  # 0.7 instead of 0.3
 
-    if use_e2e_mode:
-      # Set E2E-specific cost weights - heavily weight model's predictions
+    if is_experimental and self.e2e_valid:
+      # Full E2E mode: heavily weight model's predictions
       self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
 
       # Pass E2E trajectory to MPC for guidance
@@ -239,18 +237,17 @@ class LongitudinalPlanner:
                            e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory,
                            lead_cost_factor=lead_cost_factor)
     else:
-      # Hybrid mode - use model acceleration as primary with traditional weights
-      # Model acceleration seeds the MPC cost function, v_cruise acts as ceiling
+      # Standard/Hybrid mode: traditional weights with optional lead cost adjustment
+      # Model acceleration is available but not used as primary reference
+      # This maintains traditional behavior while gathering model data
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
-                           model_a=self.model_a_trajectory, lead_cost_factor=lead_cost_factor)
+                           lead_cost_factor=lead_cost_factor)
 
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
-                    e2e_mode=use_e2e_mode,
+                    e2e_mode=is_experimental and self.e2e_valid,
                     e2e_v=self.e2e_v_trajectory if self.e2e_valid else None,
-                    e2e_a=self.e2e_a_trajectory if self.e2e_valid else None,
-                    model_a=self.model_a_trajectory,
-                    model_v=self.model_v_trajectory)
+                    e2e_a=self.e2e_a_trajectory if self.e2e_valid else None)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
@@ -285,7 +282,7 @@ class LongitudinalPlanner:
         min_safe_decel = max(min_safe_decel, ACCEL_MIN)
 
         # In E2E mode with high model confidence, trust model more
-        if use_e2e_mode and self.model_confidence >= MODEL_CONFIDENCE_HIGH:
+        if is_experimental and self.e2e_valid:
           # Only apply safety floor if model is significantly under-braking
           if output_a_target_e2e > min_safe_decel * 1.5:
             output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
@@ -294,17 +291,22 @@ class LongitudinalPlanner:
           if output_a_target_e2e > min_safe_decel:
             output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
 
-    # Phase 3: Model-first output selection
-    # In E2E mode or when model confidence is high, use model's acceleration
-    # Otherwise, fall back to MPC output
-    if use_e2e_mode or self.model_confidence >= MODEL_CONFIDENCE_HIGH:
-      # In E2E mode, use model's acceleration with safety floor applied
-      output_a_target = min(output_a_target_e2e, output_a_target_mpc)
-      self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
-      if output_a_target < output_a_target_mpc:
+    # Phase 3: Output selection
+    # In E2E mode (experimental), blend model's acceleration with MPC for safety
+    # Otherwise, use traditional MPC output
+    if is_experimental and self.e2e_valid:
+      # In E2E mode, use MPC output as primary, model as upper bound for acceleration
+      # This ensures safe following distance while allowing model to influence behavior
+      output_a_target = output_a_target_mpc
+      self.output_should_stop = output_should_stop_mpc
+      
+      # Only use model acceleration if it's more conservative (lower) than MPC
+      # This ensures we don't accelerate more than the model suggests
+      if output_a_target_e2e < output_a_target_mpc:
+        output_a_target = output_a_target_e2e
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
-      # Hybrid mode: blend model and MPC, but prefer MPC for safety
+      # Standard mode: use MPC output
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
 

@@ -45,9 +45,9 @@ LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
 # E2E mode cost function weights - heavily weight model's predictions
-E2E_X_EGO_COST = 5.0      # Higher weight on following model's position
-E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
-E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
+E2E_X_EGO_COST = 10.0     # Higher weight on obstacle distance for safety
+E2E_V_EGO_COST = 8.0      # Weight on following model's velocity
+E2E_A_EGO_COST = 6.0      # Weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
 
 # Hybrid E2E mode weights (Phase 3: Direct Longitudinal Control)
@@ -419,15 +419,21 @@ class LongitudinalMpc:
     if e2e_mode and e2e_v is not None and e2e_a is not None:
       # E2E mode: model's trajectory is the primary target
       self.source = LongitudinalPlanSource.e2e
-      self.e2e_v_ref = e2e_v
+
+      # Phase 3: Clamp model velocity to v_cruise to prevent overshoot
+      self.e2e_v_ref = np.minimum(e2e_v, v_cruise)
       self.e2e_a_ref = e2e_a
       self.params[:,2] = np.min(x_obstacles, axis=1)  # Safety floor from radar
     elif model_a is not None and model_v is not None:
       # Hybrid mode (Phase 3): Use model acceleration/velocity as reference
       # This makes the car "feel" like the E2E model while being constrained by MPC
       self.source = LongitudinalPlanSource.e2e  # Use e2e source for UI
-      self.e2e_v_ref = model_v
+
+      # Phase 3: Clamp model velocity to v_cruise to prevent overshoot
+      # The model's velocity prediction may not respect cruise limits
+      self.e2e_v_ref = np.minimum(model_v, v_cruise)
       self.e2e_a_ref = model_a
+
       # In hybrid mode, still maintain safety floor from radar
       self.params[:,2] = np.min(x_obstacles, axis=1)
     else:
@@ -443,6 +449,8 @@ class LongitudinalMpc:
     if self.e2e_v_ref is not None and self.e2e_a_ref is not None:
       # Set yref to track model's velocity and acceleration
       # yref layout: [obstacle_dist_cost, x_ego, v_ego, a_ego, a_change, jerk]
+      # Note: In E2E mode, we don't set x_ego reference (yref[:,1]) to avoid conflict
+      # with obstacle distance cost. Velocity and acceleration tracking is sufficient.
       for i in range(N):
         self.yref[i, 2] = self.e2e_v_ref[i] if i < len(self.e2e_v_ref) else 0.0  # v_ego reference
         self.yref[i, 3] = self.e2e_a_ref[i] if i < len(self.e2e_a_ref) else 0.0  # a_ego reference
