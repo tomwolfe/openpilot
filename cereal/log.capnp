@@ -1276,6 +1276,11 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   e2eAcceleration @40 :Float32;  # Model's predicted acceleration from optimal hypothesis
   modelConfidence @41 :Float32;  # Model confidence (probability) in the selected hypothesis
 
+  # Model-predicted trajectories for UI display (Phase 3: Direct Longitudinal Control)
+  modelAcceleration @42 :List(Float32);  # Model's predicted acceleration trajectory
+  modelVelocity @43 :List(Float32);  # Model's predicted velocity trajectory
+  brakeDisengageProb @44 :Float32;  # Probability of brake disengage
+
   solverExecutionTime @35 :Float32;
 
   enum LongitudinalPlanSource {
