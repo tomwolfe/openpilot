@@ -155,15 +155,17 @@ class TogglesLayout(Widget):
     ui_state.update_params()
 
     e2e_description = tr(
-      "openpilot defaults to driving in chill mode. Experimental mode enables alpha-level features that aren't ready for chill mode. " +
-      "Experimental features are listed below:<br>" +
-      "<h4>End-to-End Longitudinal Control</h4><br>" +
-      "Let the driving model control the gas and brakes. openpilot will drive as it thinks a human would, including stopping for red lights and stop signs. " +
-      "Since the driving model decides the speed to drive, the set speed will only act as an upper bound. This is an alpha quality feature; " +
-      "mistakes should be expected.<br>" +
-      "<h4>New Driving Visualization</h4><br>" +
-      "The driving visualization will transition to the road-facing wide-angle camera at low speeds to better show some turns. " +
-      "The Experimental mode logo will also be shown in the top right corner."
+      "<b>End-to-End Longitudinal Control (Default)</b><br><br>" +
+      "openpilot now uses the driving model for gas and brake control in all modes. " +
+      "The model decides the speed to drive, with the set speed acting as an upper bound.<br>" +
+      "<h4>Chill Mode (Relaxed Personality)</h4><br>" +
+      "When using the Relaxed driving personality, openpilot uses conservative E2E tuning for smoother, more comfortable driving. " +
+      "This is the recommended default mode for everyday driving.<br>" +
+      "<h4>Standard/Aggressive Personality</h4><br>" +
+      "Standard and Aggressive personalities use more responsive E2E tuning for closer model tracking.<br>" +
+      "<h4>Safety Features</h4><br>" +
+      "If the model's confidence is low, openpilot automatically falls back to a smooth, safe deceleration profile. " +
+      "Radar-based safety floors ensure safe following distances at all times."
     )
 
     if ui_state.CP is not None:

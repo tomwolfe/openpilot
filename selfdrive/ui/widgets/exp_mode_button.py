@@ -47,7 +47,8 @@ class ExperimentalModeButton(Widget):
     rl.draw_line_ex(rl.Vector2(line_x, rect.y), rl.Vector2(line_x, rect.y + rect.height), 3, separator_color)
 
     # Draw text label (left aligned)
-    text = tr("EXPERIMENTAL MODE ON") if self.experimental_mode else tr("CHILL MODE ON")
+    # Phase 2: Both modes now use E2E, but with different tuning
+    text = tr("EXPERIMENTAL MODE") if self.experimental_mode else tr("CHILL MODE (E2E)")
     text_x = rect.x + self.horizontal_padding
     text_y = rect.y + rect.height / 2 - 45 * FONT_SCALE // 2  # Center vertically
 

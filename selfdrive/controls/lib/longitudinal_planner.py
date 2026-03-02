@@ -30,9 +30,18 @@ E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
 E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
 
+# Chill mode (relaxed personality) E2E weights - more conservative
+CHILL_E2E_X_EGO_COST = 3.0    # Lower weight on position for smoother following
+CHILL_E2E_V_EGO_COST = 8.0    # Moderate weight on velocity
+CHILL_E2E_A_EGO_COST = 6.0    # Lower acceleration tracking for comfort
+CHILL_E2E_J_EGO_COST = 4.0    # Higher jerk cost for smoother maneuvers
+
 # Safety floor parameters - radar-based distance as minimum safe distance
 SAFETY_FLOOR_MARGIN = 0.5  # Additional margin for safety floor
 MIN_BRAKE_SAFETY_FACTOR = 1.2  # Model must brake at least this much before MPC overrides
+
+# E2E confidence threshold for fallback behavior
+E2E_CONFIDENCE_THRESHOLD = 0.3  # Below this, use minimum-jerk fallback
 
 
 # Lookup table for turns
@@ -107,9 +116,16 @@ class LongitudinalPlanner:
     """
     Update the longitudinal planner with E2E trajectory from the model.
 
-    In ExperimentalMode, the MPC acts as a safety/jerk filter for the model's E2E output,
+    Phase 2: E2E longitudinal control is now the default for all modes.
+    The MPC acts as a safety/jerk filter for the model's E2E output,
     heavily weighting the model's predicted velocity and acceleration rather than calculating
     targets based on radar/lead-car distance.
+    
+    Personality-based tuning:
+    - relaxed (Chill Mode): Conservative weights for smoother, more comfortable driving
+    - standard/aggressive: Normal E2E tracking with more responsive behavior
+    
+    When model confidence is below threshold, falls back to minimum-jerk deceleration.
 
     Args:
       sm: SubMaster with current state
@@ -171,23 +187,25 @@ class LongitudinalPlanner:
       self.e2e_v_trajectory = e2e_v
       self.e2e_a_trajectory = e2e_a
 
-    # In ExperimentalMode, configure MPC to follow E2E trajectory
-    is_experimental = sm['selfdriveState'].experimentalMode
+    # Phase 2: E2E longitudinal is now default for all modes
+    # Personality determines tuning: relaxed=Chill, standard/aggressive=Normal E2E
+    is_e2e_valid = self.e2e_valid
+    personality = sm['selfdriveState'].personality
 
-    if is_experimental and self.e2e_valid:
-      # Set E2E-specific cost weights - heavily weight model's predictions
-      self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+    if is_e2e_valid:
+      # Set E2E-specific cost weights based on personality
+      self._set_e2e_weights(prev_accel_constraint, personality=personality)
 
       # Pass E2E trajectory to MPC for guidance
-      self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
+      self.mpc.set_weights(prev_accel_constraint, personality=personality,
                            e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory)
     else:
-      # Standard mode - use traditional radar/lead-car based planning
-      self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+      # Fallback: use traditional radar/lead-car based planning
+      self.mpc.set_weights(prev_accel_constraint, personality=personality)
 
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
-                    e2e_mode=is_experimental and self.e2e_valid,
+    self.mpc.update(sm['radarState'], v_cruise, personality=personality,
+                    e2e_mode=is_e2e_valid,
                     e2e_v=self.e2e_v_trajectory if self.e2e_valid else None,
                     e2e_a=self.e2e_a_trajectory if self.e2e_valid else None)
 
@@ -226,13 +244,22 @@ class LongitudinalPlanner:
         if output_a_target_e2e > min_safe_decel:
           output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
 
-    if is_experimental:
-      # In E2E mode, use model's acceleration with safety floor applied
-      output_a_target = min(output_a_target_e2e, output_a_target_mpc)
-      self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
-      if output_a_target < output_a_target_mpc:
-        self.mpc.source = LongitudinalPlanSource.e2e
+    # Phase 2: E2E is default, with confidence-based fallback
+    if is_e2e_valid:
+      # Check if model confidence is too low - use minimum-jerk fallback
+      if self.e2e_prob < E2E_CONFIDENCE_THRESHOLD:
+        # Generate minimum-jerk deceleration for safety
+        output_a_target = self._generate_minimum_jerk_decel(v_ego)
+        self.output_should_stop = output_should_stop_mpc
+        self.mpc.source = LongitudinalPlanSource.cruise
+      else:
+        # Use model's acceleration with safety floor applied
+        output_a_target = min(output_a_target_e2e, output_a_target_mpc)
+        self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+        if output_a_target < output_a_target_mpc:
+          self.mpc.source = LongitudinalPlanSource.e2e
     else:
+      # Fallback to MPC-only planning
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
 
@@ -247,20 +274,60 @@ class LongitudinalPlanner:
 
     In E2E mode, the MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar.
+    
+    Personality-based tuning:
+    - relaxed (Chill): More conservative, smoother maneuvers
+    - standard/aggressive: Normal E2E tracking
     """
-    jerk_factor = 1.0  # Use default jerk factor
+    from cereal import log
+    
+    jerk_factor = 1.0
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
-    # E2E-specific weights that prioritize following model predictions
-    cost_weights = [
-      E2E_X_EGO_COST,    # Position cost - follow model's trajectory
-      E2E_V_EGO_COST,    # Velocity cost - match model's velocity
-      E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
-      jerk_factor * a_change_cost,
-      jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers
-    ]
+    # Check if in Chill mode (relaxed personality)
+    is_chill = personality == log.LongitudinalPersonality.relaxed
+
+    if is_chill:
+      # Chill mode: more conservative weights for smoother driving
+      cost_weights = [
+        CHILL_E2E_X_EGO_COST,  # Lower weight on position
+        CHILL_E2E_V_EGO_COST,  # Moderate weight on velocity
+        CHILL_E2E_A_EGO_COST,  # Lower acceleration tracking
+        jerk_factor * a_change_cost,
+        jerk_factor * CHILL_E2E_J_EGO_COST  # Higher jerk cost for comfort
+      ]
+    else:
+      # Standard/aggressive: normal E2E weights
+      cost_weights = [
+        E2E_X_EGO_COST,    # Position cost - follow model's trajectory
+        E2E_V_EGO_COST,    # Velocity cost - match model's velocity
+        E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
+        jerk_factor * a_change_cost,
+        jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers
+      ]
+    
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.mpc.set_cost_weights(cost_weights, constraint_cost_weights)
+
+  def _generate_minimum_jerk_decel(self, v_ego):
+    """
+    Generate a minimum-jerk deceleration profile for safety fallback.
+    
+    Used when E2E model confidence is too low. Produces a smooth,
+    comfortable deceleration that brings the vehicle to a safe state.
+    """
+    # Comfortable deceleration rate (m/s^2)
+    comfort_decel = -1.5  # ~0.15g, comfortable for passengers
+    
+    # Limit based on current speed - less aggressive at low speeds
+    if v_ego < 5.0:
+      comfort_decel = -0.8
+    elif v_ego < 10.0:
+      comfort_decel = -1.2
+    
+    # Apply acceleration clip
+    accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+    return np.clip(comfort_decel, accel_clip[0], accel_clip[1])
 
   def publish(self, sm, pm):
     plan_send = messaging.new_message('longitudinalPlan')
