@@ -22,66 +22,67 @@ class Service:
 _services: dict[str, tuple] = {
   # service: (should_log, frequency, qlog decimation (optional))
   # note: the "EncodeIdx" packets will still be in the log
-  "gyroscope": (True, 104., 104),
-  "accelerometer": (True, 104., 104),
-  "magnetometer": (True, 25.),
-  "lightSensor": (True, 100., 100),
-  "temperatureSensor": (True, 2., 200),
-  "gpsNMEA": (True, 9.),
-  "deviceState": (True, 2., 1),
-  "touch": (True, 20., 1),
-  "can": (True, 100., 2053, QueueSize.BIG),  # decimation gives ~3 msgs in a full segment
-  "controlsState": (True, 100., 10, QueueSize.MEDIUM),
-  "selfdriveState": (True, 100., 10),
-  "pandaStates": (True, 10., 1),
-  "peripheralState": (True, 2., 1),
-  "radarState": (True, 20., 5),
+  # E2E Phase 1: Optimized decimation for 100KB qlog target
+  "gyroscope": (True, 104., 208),  # Increased decimation for E2E telemetry optimization
+  "accelerometer": (True, 104., 208),  # Increased decimation for E2E telemetry optimization
+  "magnetometer": (True, 25., 50),  # Increased decimation
+  "lightSensor": (True, 100., 200),  # Increased decimation
+  "temperatureSensor": (True, 2., 400),  # Increased decimation
+  "gpsNMEA": (True, 9., 18),  # GPS decimated - not used for driving logic
+  "deviceState": (True, 2., 2),  # Slightly increased decimation
+  "touch": (True, 20., 20),  # Increased decimation
+  "can": (True, 100., 4106, QueueSize.BIG),  # Increased decimation for ~1.5 msgs in full segment
+  "controlsState": (True, 100., 20, QueueSize.MEDIUM),  # Increased decimation
+  "selfdriveState": (True, 100., 20),  # Increased decimation
+  "pandaStates": (True, 10., 2),  # Increased decimation
+  "peripheralState": (True, 2., 2),  # Increased decimation
+  "radarState": (True, 20., 10),  # Increased decimation
   "roadEncodeIdx": (False, 20., 1),
-  "liveTracks": (True, 20.),
-  "sendcan": (True, 100., 139, QueueSize.MEDIUM),
+  "liveTracks": (True, 20., 40),  # Increased decimation
+  "sendcan": (True, 100., 278, QueueSize.MEDIUM),  # Increased decimation
   "logMessage": (True, 0.),
   "errorLogMessage": (True, 0., 1),
-  "liveCalibration": (True, 4., 4),
-  "liveTorqueParameters": (True, 4., 1),
-  "liveDelay": (True, 4., 1),
+  "liveCalibration": (True, 4., 8),  # Increased decimation
+  "liveTorqueParameters": (True, 4., 2),  # Increased decimation
+  "liveDelay": (True, 4., 2),  # Increased decimation
   "androidLog": (True, 0.),
-  "carState": (True, 100., 10),
-  "carControl": (True, 100., 10),
-  "carOutput": (True, 100., 10),
-  "longitudinalPlan": (True, 20., 10),
-  "driverAssistance": (True, 20., 20),
-  "procLog": (True, 0.5, 15, QueueSize.BIG),
-  "gpsLocationExternal": (True, 10., 10),
-  "gpsLocation": (True, 1., 1),
-  "ubloxGnss": (True, 10.),
-  "qcomGnss": (True, 2.),
-  "gnssMeasurements": (True, 10., 10),
-  "clocks": (True, 0.1, 1),
-  "ubloxRaw": (True, 20.),
-  "livePose": (True, 20., 4),
-  "liveParameters": (True, 20., 5),
-  "cameraOdometry": (True, 20., 10),
+  "carState": (True, 100., 20),  # Increased decimation
+  "carControl": (True, 100., 20),  # Increased decimation
+  "carOutput": (True, 100., 20),  # Increased decimation
+  "longitudinalPlan": (True, 20., 20),  # Increased decimation
+  "driverAssistance": (True, 20., 40),  # Increased decimation
+  "procLog": (True, 0.5, 30, QueueSize.BIG),  # Increased decimation
+  "gpsLocationExternal": (True, 10., 20),  # GPS decimated - not used for driving logic
+  "gpsLocation": (True, 1., 2),  # GPS decimated - not used for driving logic
+  "ubloxGnss": (True, 10., 20),  # GPS decimated - not used for driving logic
+  "qcomGnss": (True, 2., 4),  # GPS decimated - not used for driving logic
+  "gnssMeasurements": (True, 10., 20),  # GPS decimated - not used for driving logic
+  "clocks": (True, 0.1, 2),  # Increased decimation
+  "ubloxRaw": (True, 20., 40),  # GPS decimated - not used for driving logic
+  "livePose": (True, 20., 8),  # Increased decimation - primary driving input
+  "liveParameters": (True, 20., 10),  # Increased decimation
+  "cameraOdometry": (True, 20., 20),  # Increased decimation - primary driving input
   "thumbnail": (True, 1 / 60., 1),
-  "onroadEvents": (True, 1., 1),
-  "carParams": (True, 0.02, 1),
-  "roadCameraState": (True, 20., 20),
-  "driverCameraState": (True, 20., 20),
+  "onroadEvents": (True, 1., 2),  # Increased decimation
+  "carParams": (True, 0.02, 2),  # Increased decimation
+  "roadCameraState": (True, 20., 40),  # Increased decimation
+  "driverCameraState": (True, 20., 40),  # Increased decimation
   "driverEncodeIdx": (False, 20., 1),
-  "driverStateV2": (True, 20., 10),
-  "driverMonitoringState": (True, 20., 10),
+  "driverStateV2": (True, 20., 20),  # Increased decimation
+  "driverMonitoringState": (True, 20., 20),  # Increased decimation
   "wideRoadEncodeIdx": (False, 20., 1),
-  "wideRoadCameraState": (True, 20., 20),
-  "drivingModelData": (True, 20., 10),
-  "modelV2": (True, 20., None, QueueSize.BIG),
-  "managerState": (True, 2., 1),
+  "wideRoadCameraState": (True, 20., 40),  # Increased decimation
+  "drivingModelData": (True, 20., 20),  # Increased decimation - critical for E2E
+  "modelV2": (True, 20., None, QueueSize.BIG),  # Keep full resolution for E2E model output
+  "managerState": (True, 2., 2),  # Increased decimation
   "uploaderState": (True, 0., 1),
-  "navInstruction": (True, 1., 10),
+  "navInstruction": (True, 1., 20),  # Increased decimation
   "navRoute": (True, 0.),
   "navThumbnail": (True, 0.),
   "qRoadEncodeIdx": (False, 20.),
   "userBookmark": (True, 0., 1),
-  "soundPressure": (True, 10., 10),
-  "rawAudioData": (False, 20.),
+  "soundPressure": (True, 10., 20),  # Increased decimation
+  "rawAudioData": (False, 20.),  # Not in qlog - high bandwidth
   "bookmarkButton": (True, 0., 1),
   "audioFeedback": (True, 0., 1),
   "roadEncodeData": (False, 20., None, QueueSize.BIG),
@@ -92,7 +93,7 @@ _services: dict[str, tuple] = {
   # debug
   "uiDebug": (True, 0., 1),
   "testJoystick": (True, 0.),
-  "alertDebug": (True, 20., 5),
+  "alertDebug": (True, 20., 10),  # Increased decimation
   "livestreamWideRoadEncodeIdx": (False, 20.),
   "livestreamRoadEncodeIdx": (False, 20.),
   "livestreamDriverEncodeIdx": (False, 20.),
