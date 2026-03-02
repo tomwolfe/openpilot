@@ -7,7 +7,7 @@ from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
-from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
+from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
@@ -140,7 +140,7 @@ class LongitudinalPlanner:
     Update the longitudinal planner with E2E trajectory from the model.
 
     Phase 3: Direct Longitudinal Control - Model-First Logic
-    
+
     The model's predicted acceleration is used as the primary input for the MPC,
     making "End-to-End" (E2E) longitudinal the default behavior. The v_cruise acts
     only as a hard ceiling, and the lead car cost is reduced when the model shows
@@ -186,11 +186,11 @@ class LongitudinalPlanner:
 
     # Prevent divergence, smooth in current v_ego
     self.v_desired_filter.x = max(0.0, self.v_desired_filter.update(v_ego))
-    
+
     # Phase 3: Extract model acceleration using Plan.ACCELERATION slice
     _, model_v, model_a, _, throttle_prob, brake_disengage_prob = self.parse_model(sm['modelV2'])
     self.brake_disengage_prob = brake_disengage_prob
-    
+
     # Don't clip at low speeds since throttle_prob doesn't account for creep
     self.allow_throttle = throttle_prob > ALLOW_THROTTLE_THRESHOLD or v_ego <= MIN_ALLOW_THROTTLE_SPEED
 
@@ -220,7 +220,7 @@ class LongitudinalPlanner:
     # Phase 3: Hybrid E2E - Model acceleration influences MPC but doesn't override
     # Only use full E2E mode when experimentalMode is explicitly enabled
     is_experimental = sm['selfdriveState'].experimentalMode
-    
+
     # Calculate lead car cost reduction factor based on brake disengage probability
     # When model is confident about stopping (high brake disengage prob), reduce lead car cost
     lead_cost_factor = 1.0
@@ -267,7 +267,6 @@ class LongitudinalPlanner:
     output_a_target_mpc, output_should_stop_mpc = get_accel_from_plan(self.v_desired_trajectory, self.a_desired_trajectory, CONTROL_N_T_IDX,
                                                                         action_t=action_t, vEgoStopping=self.CP.vEgoStopping)
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
-    output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     # Phase 3: Safety floor with model-first logic
     # When model shows high confidence in stopping, prioritize model's acceleration
@@ -299,7 +298,7 @@ class LongitudinalPlanner:
       # This ensures safe following distance while allowing model to influence behavior
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
-      
+
       # Only use model acceleration if it's more conservative (lower) than MPC
       # This ensures we don't accelerate more than the model suggests
       if output_a_target_e2e < output_a_target_mpc:
@@ -363,7 +362,7 @@ class LongitudinalPlanner:
     # Phase 3: Include model-predicted acceleration for UI predicted path display
     longitudinalPlan.modelAcceleration = self.model_a_trajectory.tolist() if self.model_valid else []
     longitudinalPlan.modelVelocity = self.model_v_trajectory.tolist() if self.model_valid else []
-    
+
     # Include E2E-specific information in the plan message
     longitudinalPlan.e2eAcceleration = float(self.e2e_a_trajectory[0]) if self.e2e_valid else 0.0
     longitudinalPlan.modelConfidence = float(self.model_confidence)

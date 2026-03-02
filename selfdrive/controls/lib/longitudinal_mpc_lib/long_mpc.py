@@ -288,7 +288,7 @@ class LongitudinalMpc:
     Set cost weights for the MPC optimizer.
 
     Phase 3: Direct Longitudinal Control - Model-First Logic
-    
+
     In E2E mode, the cost function heavily weights following the model's predicted
     velocity and acceleration. In Hybrid mode, the model's acceleration is used
     as a reference with reduced lead car cost.
@@ -376,7 +376,7 @@ class LongitudinalMpc:
     Update the MPC optimizer with current state and targets.
 
     Phase 3: Direct Longitudinal Control - Model-First Logic
-    
+
     In E2E mode, the MPC uses the model's predicted velocity and acceleration
     as reference targets. In Hybrid mode, the model's acceleration is used
     as a reference while maintaining safety constraints from radar.

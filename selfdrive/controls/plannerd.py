@@ -15,7 +15,7 @@ def extract_optimal_path(model_v2_msg):
   Extract the best trajectory from the model's multi-hypothesis predictions.
 
   Phase 3: Direct Longitudinal Control
-  
+
   Uses the PLAN_MHP_N and PLAN_MHP_SELECTION constants to identify the hypothesis
   with the highest probability. Returns the selected trajectory's position, velocity,
   acceleration, and confidence level.
