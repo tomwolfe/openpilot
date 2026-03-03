@@ -1,6 +1,7 @@
 import math
 import numpy as np
 from collections import deque
+from typing import Optional
 
 from cereal import log
 from opendbc.car.lateral import FRICTION_THRESHOLD, get_friction
@@ -59,7 +60,7 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update_e2e_policy(self, policy_msg: log.ModelDataV2.Policy | None):
+  def update_e2e_policy(self, policy_msg: Optional[log.ModelDataV2.Policy]):
     """
     Update E2E policy lateral curvature from model output.
     

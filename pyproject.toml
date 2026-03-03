@@ -112,6 +112,8 @@ testing = [
   "ruff",
   "codespell",
   "pre-commit-hooks",
+  "pillow",
+  "jinja2",
 ]
 
 dev = [

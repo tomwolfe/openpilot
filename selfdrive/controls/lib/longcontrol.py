@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from cereal import car, log
 from openpilot.common.realtime import DT_CTRL
@@ -64,7 +66,7 @@ class LongControl:
     self.e2e_buffer_idx = 0
     self.e2e_valid = False
 
-  def update_e2e_policy(self, policy_msg: log.ModelDataV2.Policy | None):
+  def update_e2e_policy(self, policy_msg: Optional[log.ModelDataV2.Policy]):
     """
     Update E2E policy from model output.
     
