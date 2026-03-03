@@ -450,7 +450,7 @@ CONFIGS = [
           "liveCalibration", "livePose", "longitudinalPlan", "carState", "carOutput",
           "driverMonitoringState", "onroadEvents", "driverAssistance"],
     subs=["carControl", "controlsState"],
-    ignore=["logMonoTime", ],
+    ignore=["logMonoTime", "controlsState.lateralControlState.torqueState.version"],
     init_callback=get_car_params_callback,
     should_recv_callback=MessageBasedRcvCallback("selfdriveState"),
     tolerance=NUMPY_TOLERANCE,
