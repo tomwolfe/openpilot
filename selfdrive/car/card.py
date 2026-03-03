@@ -255,7 +255,9 @@ class Car:
   def params_thread(self, evt):
     while not evt.is_set():
       self.is_metric = self.params.get_bool("IsMetric")
-      self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
+      # Longitudinal 1.0: E2E is always enabled for vehicles with openpilot longitudinal control
+      # ExperimentalMode param is kept for UI backward compatibility
+      self.experimental_mode = self.CP.openpilotLongitudinalControl
       time.sleep(0.1)
 
   def card_thread(self):

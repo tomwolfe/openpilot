@@ -98,17 +98,21 @@ class SelfdriveD:
     # cleanup old params
     if not self.CP.alphaLongitudinalAvailable:
       self.params.remove("AlphaLongitudinalEnabled")
+    
+    # Longitudinal 1.0: E2E is now the default for all vehicles with openpilot longitudinal control
+    # ExperimentalMode param is deprecated but kept for UI backward compatibility
     if not self.CP.openpilotLongitudinalControl:
       self.params.remove("ExperimentalMode")
 
-    # E2E Phase 1: Auto-enable Experimental Mode for cars with default E2E longitudinal
-    # This ensures users get the improved E2E experience without manual configuration
+    # E2E Phase 2: Experimental Mode is now the default behavior (Longitudinal 1.0)
+    # All vehicles with openpilot longitudinal control use E2E vision-based planning
     if (self.CP.openpilotLongitudinalControl and
-        not self.CP.alphaLongitudinalAvailable and
-        not self.params.get_bool("ExperimentalMode")):
-      cloudlog.info("Auto-enabling Experimental Mode for E2E-capable vehicle")
-      self.params.put_bool("ExperimentalMode", True)
-      self.params.put_bool("ExperimentalModeConfirmed", True)
+        not self.CP.alphaLongitudinalAvailable):
+      # Auto-enable Experimental Mode for backward compatibility with UI
+      if not self.params.get_bool("ExperimentalMode"):
+        cloudlog.info("Longitudinal 1.0: E2E is now the default for all vehicles")
+        self.params.put_bool("ExperimentalMode", True)
+        self.params.put_bool("ExperimentalModeConfirmed", True)
 
     self.CS_prev = car.CarState.new_message()
     self.AM = AlertManager()
@@ -516,7 +520,9 @@ class SelfdriveD:
       self.is_metric = self.params.get_bool("IsMetric")
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
-      self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
+      # Longitudinal 1.0: E2E is always enabled for vehicles with openpilot longitudinal control
+      # ExperimentalMode param is kept for UI backward compatibility
+      self.experimental_mode = self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
       time.sleep(0.1)
 

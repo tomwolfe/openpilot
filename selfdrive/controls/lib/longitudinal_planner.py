@@ -17,6 +17,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
+from cereal import log
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
@@ -29,6 +30,11 @@ E2E_X_EGO_COST = 5.0      # Higher weight on following model's position
 E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
 E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
+
+# Chill mode (relaxed personality) acceleration and jerk limits for comfort
+CHILL_MAX_ACCEL = 1.0     # m/s^2 - reduced from standard 1.6
+CHILL_MIN_ACCEL = -2.0    # m/s^2 - gentler braking
+CHILL_JERK_FACTOR = 0.7   # Reduce jerk for smoother feel
 
 # Safety floor parameters - radar-based distance as minimum safe distance
 SAFETY_FLOOR_MARGIN = 0.5  # Additional margin for safety floor
@@ -107,9 +113,10 @@ class LongitudinalPlanner:
     """
     Update the longitudinal planner with E2E trajectory from the model.
 
-    In ExperimentalMode, the MPC acts as a safety/jerk filter for the model's E2E output,
-    heavily weighting the model's predicted velocity and acceleration rather than calculating
-    targets based on radar/lead-car distance.
+    Longitudinal 1.0: E2E vision model is now the primary source for longitudinal planning.
+    The MPC acts as a safety/jerk filter for the model's E2E output in all modes.
+    
+    Chill Mode (relaxed personality) applies restricted acceleration/jerk envelope for comfort.
 
     Args:
       sm: SubMaster with current state
@@ -171,10 +178,14 @@ class LongitudinalPlanner:
       self.e2e_v_trajectory = e2e_v
       self.e2e_a_trajectory = e2e_a
 
-    # In ExperimentalMode, configure MPC to follow E2E trajectory
-    is_experimental = sm['selfdriveState'].experimentalMode
+    # Longitudinal 1.0: E2E mode is now the default for all driving
+    # The MPC acts as a safety/jerk filter on the model's E2E output
+    is_e2e_mode = self.e2e_valid
+    
+    # Determine if Chill Mode (relaxed personality) is active for comfort restrictions
+    is_chill_mode = sm['selfdriveState'].personality == log.LongitudinalPersonality.relaxed
 
-    if is_experimental and self.e2e_valid:
+    if is_e2e_mode:
       # Set E2E-specific cost weights - heavily weight model's predictions
       self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
 
@@ -182,12 +193,13 @@ class LongitudinalPlanner:
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
                            e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory)
     else:
-      # Standard mode - use traditional radar/lead-car based planning
+      # Fallback to standard mode when E2E trajectory is not valid
+      # This maintains safety when model output is unreliable
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
 
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
     self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
-                    e2e_mode=is_experimental and self.e2e_valid,
+                    e2e_mode=is_e2e_mode,
                     e2e_v=self.e2e_v_trajectory if self.e2e_valid else None,
                     e2e_a=self.e2e_a_trajectory if self.e2e_valid else None)
 
@@ -226,15 +238,27 @@ class LongitudinalPlanner:
         if output_a_target_e2e > min_safe_decel:
           output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
 
-    if is_experimental:
-      # In E2E mode, use model's acceleration with safety floor applied
+    # Longitudinal 1.0: E2E is the default, with MPC as safety filter
+    if is_e2e_mode:
+      # Use model's acceleration with MPC safety floor applied
+      # MPC provides a safe upper bound (less aggressive braking)
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
+      # Fallback to MPC-only when E2E is not valid
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
+
+    # Apply Chill Mode comfort restrictions (relaxed personality)
+    if is_chill_mode:
+      # Restrict acceleration envelope for smoother, more comfortable driving
+      accel_clip[1] = min(accel_clip[1], CHILL_MAX_ACCEL)
+      accel_clip[0] = max(accel_clip[0], CHILL_MIN_ACCEL)
+      
+      # Apply jerk limiting for smoother transitions
+      output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
@@ -247,8 +271,11 @@ class LongitudinalPlanner:
 
     In E2E mode, the MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar.
+    
+    Chill Mode (relaxed personality) applies reduced jerk cost for smoother driving.
     """
-    jerk_factor = 1.0  # Use default jerk factor
+    # Apply Chill Mode jerk factor for relaxed personality
+    jerk_factor = CHILL_JERK_FACTOR if personality == log.LongitudinalPersonality.relaxed else 1.0
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
     # E2E-specific weights that prioritize following model predictions
@@ -257,7 +284,7 @@ class LongitudinalPlanner:
       E2E_V_EGO_COST,    # Velocity cost - match model's velocity
       E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
       jerk_factor * a_change_cost,
-      jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers
+      jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers (reduced in Chill mode)
     ]
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.mpc.set_cost_weights(cost_weights, constraint_cost_weights)

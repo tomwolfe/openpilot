@@ -279,29 +279,33 @@ class LongitudinalMpc:
       self.solver.cost_set(i, 'Zl', Zl)
 
   def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard,
-                  e2e_mode=False, e2e_v=None, e2e_a=None):
+                  e2e_mode=True, e2e_v=None, e2e_a=None):
     """
     Set cost weights for the MPC optimizer.
 
-    In E2E mode, the cost function heavily weights following the model's predicted
+    Longitudinal 1.0: E2E mode is now the default behavior.
+    The MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar/lead-car distance.
+    
+    Chill Mode (relaxed personality) applies reduced jerk for smoother driving.
 
     Args:
       prev_accel_constraint: Whether to penalize acceleration changes
       personality: Longitudinal personality setting
-      e2e_mode: Whether to use E2E-specific weights
+      e2e_mode: Whether to use E2E-specific weights (default: True for Longitudinal 1.0)
       e2e_v: E2E velocity trajectory (used when e2e_mode=True)
       e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
     """
     jerk_factor = get_jerk_factor(personality)
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
+    # Longitudinal 1.0: E2E mode is now the default
+    # Heavily weight following model's predictions
     if e2e_mode:
-      # E2E mode: heavily weight following model's predictions
       cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
     else:
-      # Standard mode: traditional weights
+      # Fallback to standard weights when E2E is not available
       cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
 
@@ -352,14 +356,14 @@ class LongitudinalMpc:
     """
     Update the MPC optimizer with current state and targets.
 
-    In E2E mode, the MPC uses the model's predicted velocity and acceleration
-    as reference targets, acting as a safety/jerk filter rather than a navigator.
+    Longitudinal 1.0: E2E mode is now the default. The MPC uses the model's predicted
+    velocity and acceleration as reference targets, acting as a safety/jerk filter.
 
     Args:
       radarstate: Radar state with lead car information
       v_cruise: Cruise control target speed
       personality: Longitudinal personality setting
-      e2e_mode: Whether to use E2E trajectory following mode
+      e2e_mode: Whether to use E2E trajectory following mode (default behavior)
       e2e_v: E2E velocity trajectory (used when e2e_mode=True)
       e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
     """
