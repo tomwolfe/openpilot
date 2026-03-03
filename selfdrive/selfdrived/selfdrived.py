@@ -103,8 +103,8 @@ class SelfdriveD:
 
     # E2E Phase 1: Auto-enable Experimental Mode for cars with default E2E longitudinal
     # This ensures users get the improved E2E experience without manual configuration
-    if (self.CP.openpilotLongitudinalControl and 
-        not self.CP.alphaLongitudinalAvailable and 
+    if (self.CP.openpilotLongitudinalControl and
+        not self.CP.alphaLongitudinalAvailable and
         not self.params.get_bool("ExperimentalMode")):
       cloudlog.info("Auto-enabling Experimental Mode for E2E-capable vehicle")
       self.params.put_bool("ExperimentalMode", True)

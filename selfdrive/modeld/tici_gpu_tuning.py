@@ -30,7 +30,7 @@ from tinygrad.helpers import DEBUG, Context
 def detect_tici_hardware() -> str:
   """
   Detect TICI hardware type.
-  
+
   Returns:
     'qualcomm' for production comma 3X with Adreno/Hexagon
     'amd' for development/testing with AMD GPU
@@ -39,21 +39,21 @@ def detect_tici_hardware() -> str:
   # Check for Qualcomm TICI (production hardware)
   try:
     # TICI devices have specific hardware identifiers
-    with open('/sys/devices/soc0/machine', 'r') as f:
+    with open('/sys/devices/soc0/machine') as f:
       machine = f.read().strip().lower()
       if 'tici' in machine or 'sdm845' in machine or 'sm8250' in machine:
         return 'qualcomm'
-  except (FileNotFoundError, IOError):
+  except OSError:
     pass
-  
+
   # Check for AMD GPU (development)
   if os.environ.get('DEV') == 'AMD' or os.environ.get('QCOM'):
     return 'amd'
-  
+
   # Check for USB GPU
   if os.environ.get('USBGPU'):
     return 'amd'
-  
+
   # Default to CPU
   return 'cpu'
 
@@ -65,7 +65,7 @@ class TICIGPUConfig:
 
   # Hardware type
   hardware_type: str = 'auto'  # 'auto', 'qualcomm', 'amd', 'cpu'
-  
+
   # Device configuration
   device: str = "QCOM"  # Default to Qualcomm for production
   amd_iface: str = "USB"  # USB GPU interface for AMD
@@ -95,7 +95,7 @@ class TICIGPUConfig:
     """Auto-detect hardware if not specified."""
     if self.hardware_type == 'auto':
       self.hardware_type = detect_tici_hardware()
-    
+
     # Set device based on hardware type
     if self.hardware_type == 'qualcomm':
       self.device = 'QCOM'
@@ -117,24 +117,24 @@ class TICIGPUConfig:
     """Configure for Qualcomm Adreno GPU and Hexagon DSP."""
     os.environ['DEV'] = 'QCOM'
     os.environ['QCOM_GPU'] = '1'
-    
+
     # Enable Adreno GPU optimizations
     os.environ['QCOM_SHADER_CACHE'] = '1'
     os.environ['QCOM_ZERO_COPY'] = '1'
-    
+
     # Enable Hexagon DSP offloading for convolutions
     os.environ['QCOM_DSP'] = '1'
-    
+
     # Set Hexagon architecture version based on SoC
     # SDM845: V66, SM8250: V68, newer: V73
-    if 'sdm845' in open('/sys/devices/soc0/machine', 'r').read().lower() if os.path.exists('/sys/devices/soc0/machine') else False:
+    if 'sdm845' in open('/sys/devices/soc0/machine').read().lower() if os.path.exists('/sys/devices/soc0/machine') else False:
       os.environ['HEXAGON_V66'] = '1'
     else:
       os.environ['HEXAGON_V68'] = '1'
-    
+
     if self.enable_schedule_cache:
       os.environ['SCHEDULE_CACHE'] = '1'
-    
+
     if self.enable_profiling or self.debug_level > 0:
       os.environ['DEBUG'] = str(self.debug_level)
 
@@ -143,9 +143,9 @@ class TICIGPUConfig:
       FUSE_ARITH=self.enable_kernel_fusion,
       FUSE_CONV_BW=self.enable_kernel_fusion,
     ).__enter__()
-    
+
     if DEBUG >= 1:
-      print(f"[TICI Setup] Configured for Qualcomm Adreno GPU + Hexagon DSP")
+      print("[TICI Setup] Configured for Qualcomm Adreno GPU + Hexagon DSP")
 
   def _apply_amd_config(self):
     """Configure for AMD GPU (development/testing)."""
@@ -164,16 +164,16 @@ class TICIGPUConfig:
       FUSE_ARITH=self.enable_kernel_fusion,
       FUSE_CONV_BW=self.enable_kernel_fusion,
     ).__enter__()
-    
+
     if DEBUG >= 1:
-      print(f"[TICI Setup] Configured for AMD GPU")
+      print("[TICI Setup] Configured for AMD GPU")
 
   def _apply_cpu_config(self):
     """Configure for CPU-only fallback."""
     os.environ['DEV'] = 'CPU'
-    
+
     if DEBUG >= 1:
-      print(f"[TICI Setup] CPU-only mode (no GPU acceleration)")
+      print("[TICI Setup] CPU-only mode (no GPU acceleration)")
 
 
 # Global GPU configuration instance
@@ -560,7 +560,7 @@ def check_gpu_compatibility() -> dict[str, Any]:
     Dictionary with compatibility information
   """
   hardware_type = detect_tici_hardware()
-  
+
   result = {
     'hardware_type': hardware_type,
     'device': Device.DEFAULT,
@@ -585,7 +585,7 @@ def check_gpu_compatibility() -> dict[str, Any]:
     result['dsp_available'] = False
 
   try:
-    device = Device[Device.DEFAULT]
+    Device[Device.DEFAULT]
     result['is_initialized'] = True
   except Exception as e:
     result['is_initialized'] = False

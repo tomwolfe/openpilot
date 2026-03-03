@@ -3,7 +3,7 @@ import os
 from openpilot.system.hardware import HARDWARE
 
 # E2E Phase 1: Configure TICI GPU environment before importing tinygrad
-from openpilot.selfdrive.modeld.tici_gpu_tuning import setup_tici_environment, check_gpu_compatibility
+from openpilot.selfdrive.modeld.tici_gpu_tuning import setup_tici_environment
 
 # Setup GPU environment (auto-detects Qualcomm/AMD/CPU)
 setup_tici_environment()
