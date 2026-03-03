@@ -154,13 +154,14 @@ class TogglesLayout(Widget):
   def _update_toggles(self):
     ui_state.update_params()
 
+    # Longitudinal 1.0: Vision-based longitudinal is now standard for all modes
+    # Experimental Mode toggle now only controls lateral features (e.g., automated lane changes)
     e2e_description = tr(
-      "openpilot defaults to driving in chill mode. Experimental mode enables alpha-level features that aren't ready for chill mode. " +
-      "Experimental features are listed below:<br>" +
-      "<h4>End-to-End Longitudinal Control</h4><br>" +
-      "Let the driving model control the gas and brakes. openpilot will drive as it thinks a human would, including stopping for red lights and stop signs. " +
-      "Since the driving model decides the speed to drive, the set speed will only act as an upper bound. This is an alpha quality feature; " +
-      "mistakes should be expected.<br>" +
+      "openpilot now uses vision-based longitudinal control by default in all modes. " +
+      "The driving model controls the gas and brakes, including stopping for red lights and stop signs. " +
+      "This provides a more natural driving experience.<br><br>" +
+      "<h4>Experimental Mode (Lateral Features)</h4><br>" +
+      "Enabling Experimental Mode activates alpha-level lateral features:<br>" +
       "<h4>New Driving Visualization</h4><br>" +
       "The driving visualization will transition to the road-facing wide-angle camera at low speeds to better show some turns. " +
       "The Experimental mode logo will also be shown in the top right corner."

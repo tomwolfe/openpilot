@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import numpy as np
 from numbers import Number
 
 from cereal import car, log
@@ -8,6 +9,7 @@ from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority, Ratekeeper
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.filter_simple import FirstOrderFilter
 
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
@@ -57,6 +59,13 @@ class Controls:
       self.LaC = LatControlPID(self.CP, self.CI, DT_CTRL)
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CI, DT_CTRL)
+
+    # Longitudinal 1.0: Smooth stop-and-go filter
+    # This filter ensures progressive deceleration when the model predicts stops
+    # to prevent "phantom braking" jitters
+    self.accel_filter = FirstOrderFilter(0.0, 0.5, DT_CTRL)  # 0.5s time constant for smooth transitions
+    self.prev_vision_accel = 0.0
+    self.stop_smoothness_counter = 0  # Counter to track sustained stop predictions
 
   def update(self):
     self.sm.update(15)
@@ -109,10 +118,52 @@ class Controls:
       self.LaC.reset()
     if not CC.longActive:
       self.LoC.reset()
+      # Reset smoothing filter when disengaged
+      self.accel_filter.x = 0.0
+      self.stop_smoothness_counter = 0
 
-    # accel PID loop
+    # Longitudinal 1.0: Apply smooth stop-and-go filter to vision-based acceleration
+    # This prevents "phantom braking" jitters when the model predicts stops
+    vision_accel = long_plan.aTarget
+    model_confidence = long_plan.modelConfidence if hasattr(long_plan, 'modelConfidence') else 0.0
+    using_vision = long_plan.usingVisionLongitudinal if hasattr(long_plan, 'usingVisionLongitudinal') else True
+
+    # Track stop predictions for smoothness
+    is_predicted_stop = long_plan.shouldStop or (vision_accel < -2.0 and CS.vEgo < 5.0)
+    if is_predicted_stop:
+      self.stop_smoothness_counter += 1
+    else:
+      self.stop_smoothness_counter = max(0, self.stop_smoothness_counter - 1)
+
+    # Apply smoothing filter when using vision-longitudinal and approaching a stop
+    # Use stronger filtering for sustained stop predictions to ensure progressive deceleration
+    if using_vision and model_confidence > 0.3:
+      if self.stop_smoothness_counter > 3:  # Sustained stop prediction
+        # Use longer time constant for smoother stops
+        self.accel_filter.alpha = 1 - math.exp(-DT_CTRL / 1.0)  # 1.0s time constant
+      else:
+        # Normal filtering
+        self.accel_filter.alpha = 1 - math.exp(-DT_CTRL / 0.5)  # 0.5s time constant
+
+      # Apply first-order filter to smooth acceleration changes
+      smoothed_accel = self.accel_filter.update(vision_accel)
+
+      # Limit jerk during stop-and-go scenarios (max 3 m/s^3)
+      max_jerk = 3.0 * DT_CTRL
+      accel_change = smoothed_accel - self.prev_vision_accel
+      if abs(accel_change) > max_jerk:
+        smoothed_accel = self.prev_vision_accel + np.sign(accel_change) * max_jerk
+
+      self.prev_vision_accel = smoothed_accel
+      smoothed_long_plan_accel = smoothed_accel
+    else:
+      # Classical mode or low confidence: pass through without additional filtering
+      smoothed_long_plan_accel = vision_accel
+      self.prev_vision_accel = vision_accel
+
+    # accel PID loop with smoothed acceleration target
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, smoothed_long_plan_accel, long_plan.shouldStop, pid_accel_limits))
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage

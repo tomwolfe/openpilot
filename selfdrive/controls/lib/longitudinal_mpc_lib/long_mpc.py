@@ -44,11 +44,11 @@ LEAD_DANGER_FACTOR = 0.75
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
-# E2E mode cost function weights - heavily weight model's predictions
-E2E_X_EGO_COST = 5.0      # Higher weight on following model's position
-E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
-E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
-E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
+# Longitudinal 1.0: Vision-based E2E cost function weights - heavily weight model's predictions
+VISION_X_EGO_COST = 5.0      # Higher weight on following model's position
+VISION_V_EGO_COST = 10.0     # Higher weight on following model's velocity
+VISION_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
+VISION_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
 
 # Fewer timestamps don't hurt performance and lead to
 # much better convergence of the MPC with low iterations
@@ -256,9 +256,9 @@ class LongitudinalMpc:
     self.time_integrator = 0.0
     self.x0 = np.zeros(X_DIM)
 
-    # E2E mode references
-    self.e2e_v_ref = None
-    self.e2e_a_ref = None
+    # Vision-longitudinal mode references
+    self.vision_v_ref = None
+    self.vision_a_ref = None
 
     self.set_weights()
 
@@ -279,29 +279,34 @@ class LongitudinalMpc:
       self.solver.cost_set(i, 'Zl', Zl)
 
   def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard,
-                  e2e_mode=False, e2e_v=None, e2e_a=None):
+                  vision_mode=False, vision_v=None, vision_a=None):
     """
     Set cost weights for the MPC optimizer.
 
-    In E2E mode, the cost function heavily weights following the model's predicted
+    In vision-longitudinal mode (Longitudinal 1.0), the cost function heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar/lead-car distance.
 
     Args:
       prev_accel_constraint: Whether to penalize acceleration changes
       personality: Longitudinal personality setting
-      e2e_mode: Whether to use E2E-specific weights
-      e2e_v: E2E velocity trajectory (used when e2e_mode=True)
-      e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
+      vision_mode: Whether to use vision-longitudinal weights (default mode)
+      vision_v: Vision velocity trajectory (used when vision_mode=True)
+      vision_a: Vision acceleration trajectory (used when vision_mode=True)
     """
     jerk_factor = get_jerk_factor(personality)
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
-    if e2e_mode:
-      # E2E mode: heavily weight following model's predictions
-      cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
-                      jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
+    if vision_mode:
+      # Vision-longitudinal mode (Longitudinal 1.0): heavily weight following model's predictions
+      # Cost weights: [obstacle_dist, x_ego, v_ego, a_ego, a_change, jerk]
+      cost_weights = [VISION_X_EGO_COST,  # obstacle distance cost (repurposed for vision tracking)
+                      VISION_X_EGO_COST,   # x_ego cost
+                      VISION_V_EGO_COST,   # v_ego cost
+                      VISION_A_EGO_COST,   # a_ego cost
+                      jerk_factor * a_change_cost,  # a_change cost
+                      jerk_factor * VISION_J_EGO_COST]  # jerk cost
     else:
-      # Standard mode: traditional weights
+      # Classical mode: traditional weights for lead-following
       cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * J_EGO_COST]
 
@@ -348,20 +353,20 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard,
-             e2e_mode=False, e2e_v=None, e2e_a=None):
+             vision_mode=False, vision_v=None, vision_a=None):
     """
     Update the MPC optimizer with current state and targets.
 
-    In E2E mode, the MPC uses the model's predicted velocity and acceleration
+    In vision-longitudinal mode (Longitudinal 1.0), the MPC uses the model's predicted velocity and acceleration
     as reference targets, acting as a safety/jerk filter rather than a navigator.
 
     Args:
       radarstate: Radar state with lead car information
       v_cruise: Cruise control target speed
       personality: Longitudinal personality setting
-      e2e_mode: Whether to use E2E trajectory following mode
-      e2e_v: E2E velocity trajectory (used when e2e_mode=True)
-      e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
+      vision_mode: Whether to use vision trajectory following mode (default)
+      vision_v: Vision velocity trajectory (used when vision_mode=True)
+      vision_a: Vision acceleration trajectory (used when vision_mode=True)
     """
     t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]
@@ -386,39 +391,39 @@ class LongitudinalMpc:
 
     x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
 
-    # In E2E mode, use model's trajectory as primary reference
-    if e2e_mode and e2e_v is not None and e2e_a is not None:
-      # E2E mode: model's trajectory is the primary target
+    # In vision-longitudinal mode (Longitudinal 1.0), use model's trajectory as primary reference
+    if vision_mode and vision_v is not None and vision_a is not None:
+      # Vision-longitudinal mode: model's trajectory is the primary target
       # Set source to e2e and use model's velocity/acceleration as reference
       self.source = LongitudinalPlanSource.e2e
 
-      # Set up reference trajectory from E2E model output
+      # Set up reference trajectory from vision model output
       # The MPC will act as a safety filter, ensuring smoothness and feasibility
-      self.e2e_v_ref = e2e_v
-      self.e2e_a_ref = e2e_a
+      self.vision_v_ref = vision_v
+      self.vision_a_ref = vision_a
 
-      # In E2E mode, we still need obstacles for safety constraints
-      # but the cost function will prioritize following E2E trajectory
+      # In vision-longitudinal mode, we still need obstacles for safety constraints
+      # but the cost function will prioritize following vision trajectory
       self.params[:,2] = np.min(x_obstacles, axis=1)  # Safety floor from radar
     else:
-      # Standard mode: use traditional obstacle-based planning
+      # Classical mode: use traditional obstacle-based planning
       self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
-      self.e2e_v_ref = None
-      self.e2e_a_ref = None
+      self.vision_v_ref = None
+      self.vision_a_ref = None
       self.params[:,2] = np.min(x_obstacles, axis=1)
 
     self.yref[:,:] = 0.0
 
-    # In E2E mode, set reference trajectory to model's predictions
-    if e2e_mode and self.e2e_v_ref is not None and self.e2e_a_ref is not None:
+    # In vision-longitudinal mode, set reference trajectory to model's predictions
+    if vision_mode and self.vision_v_ref is not None and self.vision_a_ref is not None:
       # Set yref to track model's velocity and acceleration
       # yref layout: [obstacle_dist_cost, x_ego, v_ego, a_ego, a_change, jerk]
       for i in range(N):
-        self.yref[i, 2] = self.e2e_v_ref[i] if i < len(self.e2e_v_ref) else 0.0  # v_ego reference
-        self.yref[i, 3] = self.e2e_a_ref[i] if i < len(self.e2e_a_ref) else 0.0  # a_ego reference
+        self.yref[i, 2] = self.vision_v_ref[i] if i < len(self.vision_v_ref) else 0.0  # v_ego reference
+        self.yref[i, 3] = self.vision_a_ref[i] if i < len(self.vision_a_ref) else 0.0  # a_ego reference
       # Terminal cost
-      self.yref[N, 2] = self.e2e_v_ref[-1] if len(self.e2e_v_ref) > 0 else 0.0
-      self.yref[N, 3] = self.e2e_a_ref[-1] if len(self.e2e_a_ref) > 0 else 0.0
+      self.yref[N, 2] = self.vision_v_ref[-1] if len(self.vision_v_ref) > 0 else 0.0
+      self.yref[N, 3] = self.vision_a_ref[-1] if len(self.vision_a_ref) > 0 else 0.0
 
     for i in range(N):
       self.solver.set(i, "yref", self.yref[i])
