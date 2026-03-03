@@ -30,7 +30,7 @@ LP_FILTER_CUTOFF_HZ = 1.2
 JERK_LOOKAHEAD_SECONDS = 0.19
 JERK_GAIN = 0.3
 LAT_ACCEL_REQUEST_BUFFER_SECONDS = 1.0
-VERSION = 1
+VERSION = 2  # Incremented for E2E policy support
 
 class LatControlTorque(LatControl):
   def __init__(self, CP, CI, dt):
@@ -45,6 +45,9 @@ class LatControlTorque(LatControl):
     self.lat_accel_request_buffer = deque([0.] * self.lat_accel_request_buffer_len , maxlen=self.lat_accel_request_buffer_len)
     self.lookahead_frames = int(JERK_LOOKAHEAD_SECONDS / self.dt)
     self.jerk_filter = FirstOrderFilter(0.0, 1 / (2 * np.pi * LP_FILTER_CUTOFF_HZ), self.dt)
+    # E2E policy curvature buffer
+    self.e2e_curvature_buffer = None
+    self.e2e_curvature_idx = 0
 
   def update_live_torque_params(self, latAccelFactor, latAccelOffset, friction):
     self.torque_params.latAccelFactor = latAccelFactor
@@ -56,12 +59,83 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay):
+  def update_e2e_policy(self, policy_msg: log.ModelDataV2.Policy | None):
+    """
+    Update E2E policy lateral curvature from model output.
+    
+    In Phase 2 Full E2E, the model directly outputs lateral curvatures
+    for a 5-second horizon, which replaces the path-smoothing MPC.
+    
+    Args:
+      policy_msg: Full E2E Policy message from modelV2.fullE2EPolicy
+    """
+    if policy_msg is None or not policy_msg.lateralCurvatures:
+      self.e2e_curvature_buffer = None
+      self.e2e_curvature_idx = 0
+      return
+    
+    # Store curvature profile
+    curvature_list = list(policy_msg.lateralCurvatures)
+    self.e2e_curvature_buffer = np.array(curvature_list, dtype=np.float32)
+    self.e2e_curvature_idx = 0
+
+  def get_e2e_curvature(self) -> float | None:
+    """
+    Get curvature from E2E policy buffer.
+    
+    Returns the next curvature value from the model's 5-second horizon.
+    Returns None if E2E policy is not available.
+    
+    Returns:
+      Curvature command from E2E policy, or None if not available
+    """
+    if self.e2e_curvature_buffer is None or self.e2e_curvature_idx >= len(self.e2e_curvature_buffer):
+      return None
+    
+    curvature = self.e2e_curvature_buffer[self.e2e_curvature_idx]
+    self.e2e_curvature_idx += 1
+    return float(curvature)
+
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, e2e_policy=None):
+    """
+    Update lateral control with optional E2E policy.
+    
+    In Phase 2 Full E2E, when E2E policy is available, the system uses
+    the model's direct curvature output, reducing reliance on path-smoothing MPC.
+    
+    Args:
+      active: Whether lateral control is active
+      CS: CarState message
+      VM: VehicleModel
+      params: LiveParameters
+      steer_limited_by_safety: Whether steering is limited by safety
+      desired_curvature: Desired curvature from planner
+      curvature_limited: Whether curvature is limited
+      lat_delay: Lateral delay in seconds
+      e2e_policy: Optional E2E Policy message from model
+    
+    Returns:
+      Tuple of (torque, steering_angle_deg, pid_log)
+    """
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
+    
+    # Update E2E policy if provided
+    if e2e_policy is not None:
+      self.update_e2e_policy(e2e_policy)
+    
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
     measurement = measured_curvature * CS.vEgo ** 2
-    future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
+    
+    # Phase 2 Full E2E: Use E2E policy curvature directly when available
+    e2e_curvature = self.get_e2e_curvature()
+    if e2e_curvature is not None:
+      # Use E2E curvature as the primary setpoint
+      future_desired_lateral_accel = e2e_curvature * CS.vEgo ** 2
+    else:
+      # Fallback to traditional desired curvature
+      future_desired_lateral_accel = desired_curvature * CS.vEgo ** 2
+    
     self.lat_accel_request_buffer.append(future_desired_lateral_accel)
 
     roll_compensation = params.roll * ACCELERATION_DUE_TO_GRAVITY

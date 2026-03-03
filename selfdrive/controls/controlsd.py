@@ -95,6 +95,7 @@ class Controls:
     standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill
     CC.latActive = self.sm['selfdriveState'].active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                    (not standstill or self.CP.steerAtStandstill)
+    # Phase 2 Full E2E: Longitudinal control is always active when enabled (no lane-centric/laneless toggling)
     CC.longActive = CC.enabled and not any(e.overrideLongitudinal for e in self.sm['onroadEvents']) and self.CP.openpilotLongitudinalControl
 
     actuators = CC.actuators
@@ -110,20 +111,31 @@ class Controls:
     if not CC.longActive:
       self.LoC.reset()
 
-    # accel PID loop
+    # Phase 2 Full E2E: Get E2E policy from model output
+    e2e_policy = model_v2.fullE2EPolicy if hasattr(model_v2, 'fullE2EPolicy') and model_v2.fullE2EPolicy else None
+    
+    # accel PID loop with E2E policy integration
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, 
+                                            pid_accel_limits, e2e_policy=e2e_policy))
 
     # Steering PID loop and lateral MPC
-    # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    # Phase 2 Full E2E: Use policy curvature directly when available
+    if e2e_policy and e2e_policy.lateralCurvatures and len(e2e_policy.lateralCurvatures) > 0:
+      # Use first curvature from E2E policy (immediate command)
+      new_desired_curvature = e2e_policy.lateralCurvatures[0] if CC.latActive else self.curvature
+    else:
+      # Fallback to action.desiredCurvature (Phase 1 E2E)
+      new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+    
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
     actuators.curvature = self.desired_curvature
+    # Pass E2E policy to lateral controller for direct curvature following
     steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
                                                        self.steer_limited_by_safety, self.desired_curvature,
-                                                       curvature_limited, lat_delay)
+                                                       curvature_limited, lat_delay, e2e_policy=e2e_policy)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs

@@ -13,7 +13,13 @@ class LatControlAngle(LatControl):
     self.sat_check_min_speed = 5.
     self.use_steer_limited_by_safety = CP.brand == "tesla"
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, e2e_policy=None):
+    """
+    Update lateral angle control with optional E2E policy.
+    
+    Args:
+      e2e_policy: Optional E2E Policy message (not used in angle controller, but kept for API consistency)
+    """
     angle_log = log.ControlsState.LateralAngleState.new_message()
 
     if not active:

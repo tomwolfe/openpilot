@@ -1,4 +1,5 @@
 import numpy as np
+from enum import IntEnum
 
 def index_function(idx, max_val=192, max_idx=32):
   return (max_val) * ((idx/max_idx)**2)
@@ -56,6 +57,11 @@ class ModelConstants:
   # Phase 1 E2E 1.0: Standardized policy schema
   PLAN_HYPOTHESES_COUNT = 5  # Number of trajectory hypotheses in policy output
 
+  # Phase 2 Full E2E: Direct policy control (5-second horizon at 100Hz)
+  POLICY_HORIZON_SECONDS = 5.0
+  POLICY_FREQ_HZ = 100
+  POLICY_HORIZON_POINTS = int(POLICY_HORIZON_SECONDS * POLICY_FREQ_HZ)  # 500 points
+
   FCW_THRESHOLD_5MS2_HIGH = 0.15
   FCW_THRESHOLD_5MS2_LOW = 0.05
   FCW_THRESHOLD_3MS2 = 0.7
@@ -65,6 +71,28 @@ class ModelConstants:
   RYG_YELLOW = 0.06157
 
   POLY_PATH_DEGREE = 4
+
+
+# Phase 2 Full E2E: Policy type classification
+class PolicyType(IntEnum):
+  STANDARD = 0      # Standard driving policy following lanes
+  LANE_CHANGE = 1   # Lane change maneuver in progress
+  STOPPING = 2      # Stopping maneuver (stop sign, red light, traffic)
+  STARTING = 3      # Starting from stop
+  EMERGENCY = 4     # Emergency maneuver
+
+
+# Phase 2 Full E2E: High-level maneuver hints
+class ManeuverHint(IntEnum):
+  NONE = 0
+  FOLLOW_LANE = 1
+  TURN_LEFT = 2
+  TURN_RIGHT = 3
+  LANE_CHANGE_LEFT = 4
+  LANE_CHANGE_RIGHT = 5
+  STOP = 6
+  GO = 7
+  YIELD = 8
 
 # model outputs slices
 class Plan:

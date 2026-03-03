@@ -1076,6 +1076,7 @@ struct ModelDataV2 {
   acceleration @19 :XYZTData;
 
   # prediction lanelines and road edges
+  # Deprecated in Phase 2 E2E: replaced by direct policy output
   laneLines @8 :List(XYZTData);
   laneLineProbs @9 :List(Float32);
   laneLineStds @13 :List(Float32);
@@ -1083,6 +1084,7 @@ struct ModelDataV2 {
   roadEdgeStds @14 :List(Float32);
 
   # predicted lead cars
+  # Deprecated in Phase 2 E2E: no explicit lead detection, policy handles implicitly
   leads @11 :List(LeadDataV2);
   leadsV3 @18 :List(LeadDataV3);
 
@@ -1092,11 +1094,16 @@ struct ModelDataV2 {
   # Model perceived motion
   temporalPoseDEPRECATED @21 :Pose;
 
-  # e2e lateral planner
+  # e2e lateral planner (Phase 1 E2E)
   action @26: Action;
 
   # multi-hypothesis policy output (Phase 1 E2E 1.0)
+  # Deprecated in Phase 2: use fullE2EPolicy instead
   policy @27 :List(PolicyHypothesis);
+
+  # Full E2E policy output (Phase 2: Pixels-to-Policy)
+  # Direct longitudinal and lateral control commands independent of explicit object detection
+  fullE2EPolicy @28 :Policy;
 
   gpuExecutionTimeDEPRECATED @17 :Float32;
   navEnabledDEPRECATED @22 :Bool;
@@ -1191,7 +1198,48 @@ struct ModelDataV2 {
     shouldStop @2 :Bool;
   }
 
+  # Full E2E Policy output (Phase 2: Pixels-to-Policy)
+  # Independent longitudinal and lateral control commands for 5-second horizon
+  struct Policy {
+    # Longitudinal control: projected accelerations for 5s horizon (100Hz = 500 points)
+    longitudinalAccelerations @0 :List(Float32);
+    # Lateral control: projected curvatures for 5s horizon (100Hz = 500 points)
+    lateralCurvatures @1 :List(Float32);
+    # Model confidence in this policy (0.0 - 1.0)
+    confidence @2 :Float32;
+    # Policy type classification
+    policyType @3 :PolicyType;
+    # Optional: high-level driving maneuver hint
+    maneuverHint @4 :ManeuverHint;
+    
+    enum PolicyType {
+      # Standard driving policy following lanes
+      standard @0;
+      # Lane change maneuver in progress
+      laneChange @1;
+      # Stopping maneuver (stop sign, red light, traffic)
+      stopping @2;
+      # Starting from stop
+      starting @3;
+      # Emergency maneuver
+      emergency @4;
+    }
+    
+    enum ManeuverHint {
+      none @0;
+      followLane @1;
+      turnLeft @2;
+      turnRight @3;
+      laneChangeLeft @4;
+      laneChangeRight @5;
+      stop @6;
+      go @7;
+      yield @8;
+    }
+  }
+
   # Policy hypothesis for multi-path trajectory prediction (Phase 1 E2E 1.0)
+  # Deprecated in favor of full Policy struct for Phase 2
   struct PolicyHypothesis {
     # trajectory position over time (matches Plan.POSITION slice: x, y, z)
     trajectory @0 :XYZTData;
