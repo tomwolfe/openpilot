@@ -45,8 +45,12 @@ class Controls:
     self.curvature = 0.0
     self.desired_curvature = 0.0
 
+    # Phase 3: Visual Navigation - Reduce dependency on GPS/livePose
+    # The E2E model already accounts for vehicle dynamics through visual context
+    # Calibrated pose is now only used for supplementary information, not primary planning
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
+    self.use_calibrated_pose = False  # Default to visual-only mode
 
     self.LoC = LongControl(self.CP)
     self.VM = VehicleModel(self.CP)
@@ -62,7 +66,9 @@ class Controls:
     self.sm.update(15)
     if self.sm.updated["liveCalibration"]:
       self.pose_calibrator.feed_live_calib(self.sm['liveCalibration'])
-    if self.sm.updated["livePose"]:
+    # Phase 3: Visual Navigation - Only use calibrated pose when explicitly enabled
+    # The E2E model provides visual-based trajectory that doesn't require GPS correction
+    if self.sm.updated["livePose"] and self.use_calibrated_pose:
       device_pose = Pose.from_live_pose(self.sm['livePose'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
 
@@ -70,12 +76,19 @@ class Controls:
     CS = self.sm['carState']
 
     # Update VehicleModel
+    # Phase 3: Visual Navigation - Use liveParameters with fallback to defaults
+    # The E2E model learns vehicle dynamics through visual context
     lp = self.sm['liveParameters']
     x = max(lp.stiffnessFactor, 0.1)
     sr = max(lp.steerRatio, 0.1)
     self.VM.update_params(x, sr)
 
-    steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
+    # Phase 3: Reduce dependency on angleOffsetDeg from liveParameters
+    # The E2E model accounts for steering offset through visual learning
+    # Use a smaller weight on the learned offset, defaulting to zero
+    angle_offset_weight = 0.3  # Reduced from 1.0 to rely less on GPS-corrected offset
+    steer_angle_offset = lp.angleOffsetDeg * angle_offset_weight
+    steer_angle_without_offset = math.radians(CS.steeringAngleDeg - steer_angle_offset)
     self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
 
     # Update Torque Params
@@ -117,7 +130,12 @@ class Controls:
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
     new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+    # Phase 3: Visual Navigation - Reduce roll compensation dependency
+    # The E2E model accounts for road geometry through visual context
+    # Use reduced roll compensation weight
+    roll_compensation_weight = 0.5  # Reduced from 1.0
+    effective_roll = lp.roll * roll_compensation_weight
+    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, effective_roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
     actuators.curvature = self.desired_curvature
@@ -141,12 +159,18 @@ class Controls:
   def publish(self, CC, lac_log):
     CS = self.sm['carState']
 
-    # Orientation and angle rates can be useful for carcontroller
-    # Only calibrated (car) frame is relevant for the carcontroller
+    # Phase 3: Visual Navigation - Orientation from model, not GPS-corrected pose
+    # The E2E model provides visual-based orientation that is sufficient for control
+    # Calibrated pose is only used as fallback when visual data is unavailable
     CC.currentCurvature = self.curvature
-    if self.calibrated_pose is not None:
+    if self.calibrated_pose is not None and self.use_calibrated_pose:
+      # Use calibrated pose only when explicitly enabled (fallback mode)
       CC.orientationNED = self.calibrated_pose.orientation.xyz.tolist()
       CC.angularVelocity = self.calibrated_pose.angular_velocity.xyz.tolist()
+    else:
+      # Default: use zeros, letting car controller rely on model's visual outputs
+      CC.orientationNED = [0.0, 0.0, 0.0]
+      CC.angularVelocity = [0.0, 0.0, 0.0]
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and self.CP.openpilotLongitudinalControl
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)

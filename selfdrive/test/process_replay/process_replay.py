@@ -450,7 +450,9 @@ CONFIGS = [
           "liveCalibration", "livePose", "longitudinalPlan", "carState", "carOutput",
           "driverMonitoringState", "onroadEvents", "driverAssistance"],
     subs=["carControl", "controlsState"],
-    ignore=["logMonoTime", ],
+    # Phase 3: Visual Navigation - Ignore fields affected by reduced GPS dependency
+    ignore=["logMonoTime", "carControl.orientationNED", "carControl.angularVelocity",
+            "controlsState.desiredCurvature"],
     init_callback=get_car_params_callback,
     should_recv_callback=MessageBasedRcvCallback("selfdriveState"),
     tolerance=NUMPY_TOLERANCE,

@@ -171,10 +171,11 @@ class LongitudinalPlanner:
       self.e2e_v_trajectory = e2e_v
       self.e2e_a_trajectory = e2e_a
 
-    # In ExperimentalMode, configure MPC to follow E2E trajectory
-    is_experimental = sm['selfdriveState'].experimentalMode
+    # E2E by Default: Always configure MPC to follow E2E trajectory when valid
+    # ExperimentalMode toggle is deprecated - E2E is now standard behavior
+    is_experimental = True  # E2E is always enabled by default
 
-    if is_experimental and self.e2e_valid:
+    if self.e2e_valid:
       # Set E2E-specific cost weights - heavily weight model's predictions
       self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
 
@@ -182,7 +183,7 @@ class LongitudinalPlanner:
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
                            e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory)
     else:
-      # Standard mode - use traditional radar/lead-car based planning
+      # Fallback mode - use traditional radar/lead-car based planning when E2E unavailable
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
 
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
@@ -226,13 +227,16 @@ class LongitudinalPlanner:
         if output_a_target_e2e > min_safe_decel:
           output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
 
-    if is_experimental:
+    # E2E by Default: Always prefer model's acceleration when valid
+    # Safety floor from radar is applied above
+    if self.e2e_valid:
       # In E2E mode, use model's acceleration with safety floor applied
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
+      # Fallback to MPC-only when E2E unavailable
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
 
