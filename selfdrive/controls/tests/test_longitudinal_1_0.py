@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Longitudinal 1.0 Test Suite
 
@@ -12,7 +11,7 @@ import numpy as np
 import pytest
 
 from openpilot.common.realtime import DT_CTRL
-from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc
 
 
 class TestSmoothStopAndGo:
@@ -29,11 +28,9 @@ class TestSmoothStopAndGo:
     jerky_accels = [-0.5, -2.0, -0.3, -2.5, -0.8, -1.5, -0.2, -1.8]
     smoothed_accels = []
 
-    prev_accel = 0.0
     for accel in jerky_accels:
       smoothed = accel_filter.update(accel)
       smoothed_accels.append(smoothed)
-      prev_accel = smoothed
 
     # Verify smoothing reduced the variance
     jerky_variance = np.var(jerky_accels)

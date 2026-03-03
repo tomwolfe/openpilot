@@ -119,7 +119,7 @@ class LongitudinalPlanner:
       throttle_prob = 1.0
     return x, v, a, j, throttle_prob
 
-  def update(self, sm, vision_x=None, vision_v=None, vision_a=None, vision_prob=0.0, vision_valid=False):
+  def update(self, sm, e2e_x=None, e2e_v=None, e2e_a=None, e2e_prob=0.0, e2e_valid=False):
     """
     Update the longitudinal planner with vision-based trajectory from the model.
 
@@ -132,10 +132,10 @@ class LongitudinalPlanner:
 
     Args:
       sm: SubMaster with current state
-      vision_v: Vision velocity trajectory (interpolated to MPC timesteps)
-      vision_a: Vision acceleration trajectory (interpolated to MPC timesteps)
-      vision_prob: Model confidence in the vision trajectory
-      vision_valid: Whether the vision trajectory is valid
+      e2e_v: Vision velocity trajectory (interpolated to MPC timesteps)
+      e2e_a: Vision acceleration trajectory (interpolated to MPC timesteps)
+      e2e_prob: Model confidence in the vision trajectory
+      e2e_valid: Whether the vision trajectory is valid
     """
     if len(sm['carControl'].orientationNED) == 3:
       accel_coast = get_coast_accel(sm['carControl'].orientationNED[1])
@@ -182,12 +182,12 @@ class LongitudinalPlanner:
       v_cruise = 0.0
 
     # Store vision trajectory for use in MPC
-    self.vision_valid = vision_valid and vision_v is not None and vision_a is not None
-    self.vision_prob = vision_prob if vision_prob is not None else 0.0
+    self.vision_valid = e2e_valid and e2e_v is not None and e2e_a is not None
+    self.vision_prob = e2e_prob if e2e_prob is not None else 0.0
 
     if self.vision_valid:
-      self.vision_v_trajectory = vision_v
-      self.vision_a_trajectory = vision_a
+      self.vision_v_trajectory = e2e_v
+      self.vision_a_trajectory = e2e_a
 
     # Determine if we should use vision-longitudinal or fall back to classical
     # Check model certainty with hysteresis to prevent rapid switching
@@ -201,7 +201,7 @@ class LongitudinalPlanner:
 
     # Require sustained low certainty before switching to classical (hysteresis)
     use_vision_longitudinal = self.vision_valid and (self.model_certainty_low_counter < 5)
-    
+
     self.using_vision_longitudinal = use_vision_longitudinal
 
     if use_vision_longitudinal:
