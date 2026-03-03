@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-AMD GPU Tuning Utilities for TICI Hardware - Phase 1 E2E 1.0
+TICI GPU Tuning Utilities for Phase 1 E2E 1.0
 
-This module provides GPU-specific optimizations for the comma 3X TICI platform:
-- Custom kernel tuning for AMD GPU architecture
+This module provides GPU-specific optimizations for comma 3X TICI platform:
+- AMD GPU backend (development/testing)
+- Qualcomm Adreno GPU backend (production TICI hardware)
+- Hexagon DSP offloading for convolutions
 - Memory tiling optimization
 - Kernel fusion configuration
-- Performance profiling with DEBUG=2
+- Performance profiling
 
 References:
 - tinygrad_repo/extra/gemm/amd_matmul.py
@@ -24,14 +26,49 @@ from tinygrad.device import Device
 from tinygrad.helpers import DEBUG, Context
 
 
-# TICI AMD GPU Configuration
+# TICI Hardware Detection
+def detect_tici_hardware() -> str:
+  """
+  Detect TICI hardware type.
+  
+  Returns:
+    'qualcomm' for production comma 3X with Adreno/Hexagon
+    'amd' for development/testing with AMD GPU
+    'cpu' for fallback CPU-only mode
+  """
+  # Check for Qualcomm TICI (production hardware)
+  try:
+    # TICI devices have specific hardware identifiers
+    with open('/sys/devices/soc0/machine', 'r') as f:
+      machine = f.read().strip().lower()
+      if 'tici' in machine or 'sdm845' in machine or 'sm8250' in machine:
+        return 'qualcomm'
+  except (FileNotFoundError, IOError):
+    pass
+  
+  # Check for AMD GPU (development)
+  if os.environ.get('DEV') == 'AMD' or os.environ.get('QCOM'):
+    return 'amd'
+  
+  # Check for USB GPU
+  if os.environ.get('USBGPU'):
+    return 'amd'
+  
+  # Default to CPU
+  return 'cpu'
+
+
+# TICI GPU Configuration
 @dataclass
 class TICIGPUConfig:
-  """Configuration for TICI AMD GPU optimization."""
+  """Configuration for TICI GPU optimization."""
 
+  # Hardware type
+  hardware_type: str = 'auto'  # 'auto', 'qualcomm', 'amd', 'cpu'
+  
   # Device configuration
-  device: str = "AMD"
-  amd_iface: str = "USB"  # USB GPU interface
+  device: str = "QCOM"  # Default to Qualcomm for production
+  amd_iface: str = "USB"  # USB GPU interface for AMD
 
   # Kernel tuning parameters
   local_work_size: tuple[int, ...] = (256,)  # Default work group size
@@ -54,8 +91,64 @@ class TICIGPUConfig:
   enable_profiling: bool = False
   debug_level: int = 0
 
+  def __post_init__(self):
+    """Auto-detect hardware if not specified."""
+    if self.hardware_type == 'auto':
+      self.hardware_type = detect_tici_hardware()
+    
+    # Set device based on hardware type
+    if self.hardware_type == 'qualcomm':
+      self.device = 'QCOM'
+    elif self.hardware_type == 'amd':
+      self.device = 'AMD'
+    else:
+      self.device = 'CPU'
+
   def apply(self):
     """Apply configuration to environment and tinygrad."""
+    if self.hardware_type == 'qualcomm':
+      self._apply_qualcomm_config()
+    elif self.hardware_type == 'amd':
+      self._apply_amd_config()
+    else:
+      self._apply_cpu_config()
+
+  def _apply_qualcomm_config(self):
+    """Configure for Qualcomm Adreno GPU and Hexagon DSP."""
+    os.environ['DEV'] = 'QCOM'
+    os.environ['QCOM_GPU'] = '1'
+    
+    # Enable Adreno GPU optimizations
+    os.environ['QCOM_SHADER_CACHE'] = '1'
+    os.environ['QCOM_ZERO_COPY'] = '1'
+    
+    # Enable Hexagon DSP offloading for convolutions
+    os.environ['QCOM_DSP'] = '1'
+    
+    # Set Hexagon architecture version based on SoC
+    # SDM845: V66, SM8250: V68, newer: V73
+    if 'sdm845' in open('/sys/devices/soc0/machine', 'r').read().lower() if os.path.exists('/sys/devices/soc0/machine') else False:
+      os.environ['HEXAGON_V66'] = '1'
+    else:
+      os.environ['HEXAGON_V68'] = '1'
+    
+    if self.enable_schedule_cache:
+      os.environ['SCHEDULE_CACHE'] = '1'
+    
+    if self.enable_profiling or self.debug_level > 0:
+      os.environ['DEBUG'] = str(self.debug_level)
+
+    # Apply to Context
+    Context(
+      FUSE_ARITH=self.enable_kernel_fusion,
+      FUSE_CONV_BW=self.enable_kernel_fusion,
+    ).__enter__()
+    
+    if DEBUG >= 1:
+      print(f"[TICI Setup] Configured for Qualcomm Adreno GPU + Hexagon DSP")
+
+  def _apply_amd_config(self):
+    """Configure for AMD GPU (development/testing)."""
     os.environ['DEV'] = self.device
     if self.amd_iface:
       os.environ['AMD_IFACE'] = self.amd_iface
@@ -71,6 +164,16 @@ class TICIGPUConfig:
       FUSE_ARITH=self.enable_kernel_fusion,
       FUSE_CONV_BW=self.enable_kernel_fusion,
     ).__enter__()
+    
+    if DEBUG >= 1:
+      print(f"[TICI Setup] Configured for AMD GPU")
+
+  def _apply_cpu_config(self):
+    """Configure for CPU-only fallback."""
+    os.environ['DEV'] = 'CPU'
+    
+    if DEBUG >= 1:
+      print(f"[TICI Setup] CPU-only mode (no GPU acceleration)")
 
 
 # Global GPU configuration instance
@@ -434,25 +537,16 @@ class ProfileContext:
 
 def setup_tici_environment():
   """
-  Set up environment for optimal TICI AMD GPU performance.
+  Set up environment for optimal TICI GPU performance.
 
   Call this at the start of modeld to configure the environment.
+  Auto-detects hardware and applies appropriate configuration.
   """
-  # Apply GPU configuration
+  # Apply GPU configuration (auto-detects hardware)
   GPU_CONFIG.apply()
 
-  # Set additional environment variables for AMD GPU
-  os.environ['AMD_GPU'] = '1'
-
-  # Enable kernel fusion for better performance
-  os.environ['FUSE_CONV_BW'] = '1'
-  os.environ['FUSE_ARITH'] = '1'
-
-  # Configure schedule cache
-  os.environ['SCHEDULE_CACHE_SIZE'] = '32'
-
   if DEBUG >= 1:
-    print("[TICI Setup] Environment configured for AMD GPU")
+    print(f"[TICI Setup] Hardware type: {GPU_CONFIG.hardware_type}")
     print(f"  Device: {Device.DEFAULT}")
     print("  Schedule cache enabled")
     print("  Kernel fusion enabled")
@@ -465,29 +559,44 @@ def check_gpu_compatibility() -> dict[str, Any]:
   Returns:
     Dictionary with compatibility information
   """
+  hardware_type = detect_tici_hardware()
+  
   result = {
+    'hardware_type': hardware_type,
     'device': Device.DEFAULT,
-    'is_amd': Device.DEFAULT == 'AMD',
-    'is_tici': os.environ.get('AMD_IFACE') == 'USB' or Device.DEFAULT == 'AMD',
-    'supports_gpu_acceleration': True,
+    'is_qualcomm': hardware_type == 'qualcomm',
+    'is_amd': hardware_type == 'amd',
+    'is_cpu': hardware_type == 'cpu',
+    'is_tici': hardware_type in ('qualcomm', 'amd'),
+    'supports_gpu_acceleration': hardware_type != 'cpu',
   }
 
-  if result['is_amd']:
-    try:
-      # Try to get device info
-      device = Device[Device.DEFAULT]
-      result['device_name'] = getattr(device, 'name', 'Unknown AMD GPU')
-      result['is_initialized'] = True
-    except Exception as e:
-      result['is_initialized'] = False
-      result['error'] = str(e)
+  if result['is_qualcomm']:
+    result['device_name'] = 'Qualcomm Adreno GPU + Hexagon DSP'
+    result['gpu_backend'] = 'QCOM'
+    result['dsp_available'] = True
+  elif result['is_amd']:
+    result['device_name'] = 'AMD GPU (development)'
+    result['gpu_backend'] = 'AMD'
+    result['dsp_available'] = False
+  else:
+    result['device_name'] = 'CPU only'
+    result['gpu_backend'] = 'CPU'
+    result['dsp_available'] = False
+
+  try:
+    device = Device[Device.DEFAULT]
+    result['is_initialized'] = True
+  except Exception as e:
+    result['is_initialized'] = False
+    result['error'] = str(e)
 
   return result
 
 
 # Example usage and testing
 if __name__ == "__main__":
-  print("TICI AMD GPU Tuning Utilities")
+  print("TICI GPU Tuning Utilities - Phase 1 E2E")
   print("=" * 60)
 
   # Check compatibility
@@ -500,19 +609,22 @@ if __name__ == "__main__":
   print("\nSetting up TICI environment...")
   setup_tici_environment()
 
-  # Run kernel tuning example
-  print("\nRunning kernel tuning example...")
-  tuner = AMDKernelTuner()
+  # Run kernel tuning example if GPU available
+  if compat['supports_gpu_acceleration']:
+    print("\nRunning kernel tuning example...")
+    tuner = AMDKernelTuner()
 
-  # Tune a sample conv2d
-  result = tuner.tune_conv2d(
-    input_shape=(1, 3, 128, 256),
-    weight_shape=(64, 3, 3, 3)
-  )
+    # Tune a sample conv2d
+    result = tuner.tune_conv2d(
+      input_shape=(1, 3, 128, 256),
+      weight_shape=(64, 3, 3, 3)
+    )
 
-  print("\nConv2d tuning result:")
-  print(f"  Best config: {result.best_config}")
-  print(f"  Speedup: {result.speedup:.2f}x")
+    print("\nConv2d tuning result:")
+    print(f"  Best config: {result.best_config}")
+    print(f"  Speedup: {result.speedup:.2f}x")
 
-  # Print full report
-  print("\n" + tuner.get_tuning_report())
+    # Print full report
+    print("\n" + tuner.get_tuning_report())
+  else:
+    print("\nGPU not available, skipping kernel tuning")

@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 import os
 from openpilot.system.hardware import HARDWARE
-os.environ['DEV'] = 'QCOM' if HARDWARE.capabilities.has_gpu_acceleration else 'CPU'
+
+# E2E Phase 1: Configure TICI GPU environment before importing tinygrad
+from openpilot.selfdrive.modeld.tici_gpu_tuning import setup_tici_environment, check_gpu_compatibility
+
+# Setup GPU environment (auto-detects Qualcomm/AMD/CPU)
+setup_tici_environment()
+
+# Legacy hardware detection (fallback)
+if 'DEV' not in os.environ:
+  os.environ['DEV'] = 'QCOM' if HARDWARE.capabilities.has_gpu_acceleration else 'CPU'
+
 USBGPU = "USBGPU" in os.environ
 if USBGPU:
   os.environ['DEV'] = 'AMD'
   os.environ['AMD_IFACE'] = 'USB'
+
 from tinygrad.tensor import Tensor
 import time
 import pickle
