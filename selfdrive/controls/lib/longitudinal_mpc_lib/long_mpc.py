@@ -302,7 +302,9 @@ class LongitudinalMpc:
     # Longitudinal 1.0: E2E mode is now the default
     # Heavily weight following model's predictions
     if e2e_mode:
-      cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
+      # E2E mode: 6 cost weights to match cost_y_expr dimensions
+      # [obstacle_dist_cost, x_ego, v_ego, a_ego, a_change, jerk]
+      cost_weights = [E2E_X_EGO_COST, E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
                       jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
     else:
       # Fallback to standard weights when E2E is not available
