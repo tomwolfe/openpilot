@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.selfdrive.test.process_replay.regen import regen_and_save
-from openpilot.selfdrive.test.process_replay.test_processes import FAKEDATA, source_segments as segments
+from openpilot.selfdrive.test.process_replay.test_processes import FAKEDATA, source_segments as segments, EXCLUDED_PROCS
 from openpilot.tools.lib.route import SegmentName
 
 
@@ -17,7 +17,11 @@ def regen_job(segment, upload, disable_tqdm):
     sn = SegmentName(segment[1])
     fake_dongle_id = 'regen' + ''.join(random.choice('0123456789ABCDEF') for _ in range(11))
     try:
-      relr = regen_and_save(sn.route_name.canonical_name, sn.segment_num, upload=upload,
+      # Exclude modeld and dmonitoringmodeld as they require specific model files
+      processes = [p for p in ["selfdrived", "controlsd", "card", "radard", "plannerd", "calibrationd", 
+                               "dmonitoringd", "locationd", "paramsd", "lagd", "ubloxd", "torqued"] 
+                   if p not in EXCLUDED_PROCS]
+      relr = regen_and_save(sn.route_name.canonical_name, sn.segment_num, processes=processes, upload=upload,
                             outdir=os.path.join(FAKEDATA, fake_dongle_id), disable_tqdm=disable_tqdm, dummy_driver_cam=True)
       relr = '|'.join(relr.split('/')[-2:])
       return f'  ("{segment[0]}", "{relr}"), '
@@ -44,7 +48,8 @@ if __name__ == "__main__":
   tested_cars = {c.upper() for c in tested_cars}
   tested_segments = [(car, segment) for car, segment in segments if car in tested_cars]
 
-  with concurrent.futures.ProcessPoolExecutor(max_workers=args.jobs) as pool:
+  # Use ThreadPoolExecutor instead of ProcessPoolExecutor to avoid /dev/shm semaphore issues
+  with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
     p = pool.map(regen_job, tested_segments, [not args.no_upload] * len(tested_segments), [args.jobs > 1] * len(tested_segments))
     msg = "Copy these new segments into test_processes.py:"
     for seg in tqdm(p, desc="Generating segments", total=len(tested_segments)):

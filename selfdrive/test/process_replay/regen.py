@@ -36,16 +36,16 @@ def setup_data_readers(
   lr = LogReader(f"{route}/{sidx}/r")
   frs = {}
   if needs_road_cam:
-    frs['roadCameraState'] = FrameReader(get_url(route, str(sidx), "fcamera.hevc"))
+    frs['roadCameraState'] = FrameReader(get_url(route, str(sidx), "fcamera.hevc"), pix_fmt='nv12')
     if next((True for m in lr if m.which() == "wideRoadCameraState"), False):
-      frs['wideRoadCameraState'] = FrameReader(get_url(route, str(sidx), "ecamera.hevc"))
+      frs['wideRoadCameraState'] = FrameReader(get_url(route, str(sidx), "ecamera.hevc"), pix_fmt='nv12')
   if needs_driver_cam:
     if dummy_driver_cam:
-      frs['driverCameraState'] = FrameReader(get_url(route, str(sidx), "fcamera.hevc")) # Use fcam as dummy
+      frs['driverCameraState'] = FrameReader(get_url(route, str(sidx), "fcamera.hevc"), pix_fmt='nv12') # Use fcam as dummy
     else:
       device_type = next(str(msg.initData.deviceType) for msg in lr if msg.which() == "initData")
       assert device_type != "neo", "Driver camera not supported on neo segments. Use dummy dcamera."
-      frs['driverCameraState'] = FrameReader(get_url(route, str(sidx), "dcamera.hevc"))
+      frs['driverCameraState'] = FrameReader(get_url(route, str(sidx), "dcamera.hevc"), pix_fmt='nv12')
 
   return lr, frs
 
