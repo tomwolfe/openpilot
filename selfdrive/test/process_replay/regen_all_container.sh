@@ -29,6 +29,10 @@ echo "Upload: ${UPLOAD_FLAG:-no}"
 echo "Openpilot dir: $OPENPILOT_DIR"
 echo ""
 
+# Build the container image first
+echo "Building container image..."
+container build -t "$CONTAINER_IMAGE" -f "$OPENPILOT_DIR/Dockerfile.openpilot" "$OPENPILOT_DIR"
+
 # Build container run command
 # -v: Mount the openpilot directory
 # -e: Pass through necessary environment variables
@@ -44,8 +48,8 @@ CONTAINER_CMD=(
   -e "PYTHONPATH=$OPENPILOT_DIR"
   -e "PYTHONUNBUFFERED=1"
   -e "TQDM_POSITION=-1"
-  --memory=8g
-  --cpus=4
+  -m 8g
+  -c 4
 )
 
 # Add car filters if specified
@@ -74,25 +78,6 @@ container run --rm --entrypoint "" "$CONTAINER_IMAGE" tar -C /home/batman/openpi
 echo "Building native extensions inside container..."
 "${CONTAINER_CMD[@]}" bash -c "scons -j\$(nproc)"
 
-# Add the Python command
-PYTHON_CMD=(
-  python3
-  selfdrive/test/process_replay/regen_all.py
-  -j "$JOBS"
-)
-
-if [[ -z "$UPLOAD_FLAG" ]]; then
-  PYTHON_CMD+=("--no-upload")
-fi
-
-# Add car filter arguments
-if [[ -n "$WHITELIST_CARS" ]]; then
-  PYTHON_CMD+=(--whitelist-cars $WHITELIST_CARS)
-fi
-if [[ -n "$BLACKLIST_CARS" ]]; then
-  PYTHON_CMD+=(--blacklist-cars $BLACKLIST_CARS)
-fi
-
 # Run the container
 echo "Running regen with container..."
 echo ""
@@ -107,7 +92,7 @@ import argparse
 # Parse arguments first
 parser = argparse.ArgumentParser()
 parser.add_argument("-j", "--jobs", type=int, default=1)
-parser.add_argument("--no-upload", action="store_true")
+parser.add_argument("--upload", action="store_true")
 parser.add_argument("--whitelist-cars", type=str, nargs="*", default=None)
 parser.add_argument("--blacklist-cars", type=str, nargs="*", default=[])
 args = parser.parse_args()
@@ -121,18 +106,26 @@ if args.jobs == 1:
     import random
     import traceback
     from openpilot.common.prefix import OpenpilotPrefix
+    from openpilot.common.params import Params
     from openpilot.selfdrive.test.process_replay.regen import regen_and_save
-    from openpilot.selfdrive.test.process_replay.test_processes import FAKEDATA, source_segments as segments, EXCLUDED_PROCS
+    from openpilot.selfdrive.test.process_replay.test_processes import FAKEDATA, segments, EXCLUDED_PROCS
     from openpilot.tools.lib.route import SegmentName
-    
+
     all_cars = {car for car, _ in segments}
     tested_cars = set(args.whitelist_cars) if args.whitelist_cars else all_cars
     tested_cars = tested_cars - set(args.blacklist_cars)
     tested_cars = {c.upper() for c in tested_cars}
     tested_segments = [(car, segment) for car, segment in segments if car in tested_cars]
-    
+
     for segment in tested_segments:
-        upload = not args.no_upload
+        # Clear cached parameters before each route to prevent car model mismatch
+        # This removes state from previous routes that could cause conflicts
+        params = Params()
+        params.remove("CarParamsPrevRoute")
+        params.remove("LiveParametersV2")
+        params.remove("LiveDelay")
+        
+        upload = args.upload
         sn = SegmentName(segment[1])
         fake_dongle_id = 'regen' + ''.join(random.choice('0123456789ABCDEF') for _ in range(11))
         try:
@@ -158,7 +151,11 @@ WRAPPER_EOF
 cp /tmp/regen_wrapper.py "$OPENPILOT_DIR/selfdrive/test/process_replay/regen_wrapper.py"
 
 # Run the wrapper script instead
-"${CONTAINER_CMD[@]}" python3 selfdrive/test/process_replay/regen_wrapper.py -j "$JOBS" ${UPLOAD_FLAG:+--no-upload} ${WHITELIST_CARS:+--whitelist-cars $WHITELIST_CARS} ${BLACKLIST_CARS:+--blacklist-cars $BLACKLIST_CARS}
+if [[ -n "$UPLOAD_FLAG" ]]; then
+  "${CONTAINER_CMD[@]}" python3 selfdrive/test/process_replay/regen_wrapper.py -j "$JOBS" --upload ${WHITELIST_CARS:+--whitelist-cars $WHITELIST_CARS} ${BLACKLIST_CARS:+--blacklist-cars $BLACKLIST_CARS}
+else
+  "${CONTAINER_CMD[@]}" python3 selfdrive/test/process_replay/regen_wrapper.py -j "$JOBS" ${WHITELIST_CARS:+--whitelist-cars $WHITELIST_CARS} ${BLACKLIST_CARS:+--blacklist-cars $BLACKLIST_CARS}
+fi
 
 # Clean up
 rm -f "$OPENPILOT_DIR/selfdrive/test/process_replay/regen_wrapper.py"

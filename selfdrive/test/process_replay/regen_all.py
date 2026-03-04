@@ -8,18 +8,26 @@ from tqdm import tqdm
 
 from openpilot.common.prefix import OpenpilotPrefix
 from openpilot.selfdrive.test.process_replay.regen import regen_and_save
-from openpilot.selfdrive.test.process_replay.test_processes import FAKEDATA, source_segments as segments, EXCLUDED_PROCS
+from openpilot.selfdrive.test.process_replay.test_processes import FAKEDATA, segments, EXCLUDED_PROCS
 from openpilot.tools.lib.route import SegmentName
+from openpilot.common.params import Params
 
 
 def regen_job(segment, upload, disable_tqdm):
+  # Clear cached parameters before each route to prevent car model mismatch
+  # This removes state from previous routes that could cause conflicts
+  params = Params()
+  params.remove("CarParamsPrevRoute")
+  params.remove("LiveParametersV2")
+  params.remove("LiveDelay")
+  
   with OpenpilotPrefix():
     sn = SegmentName(segment[1])
     fake_dongle_id = 'regen' + ''.join(random.choice('0123456789ABCDEF') for _ in range(11))
     try:
       # Exclude modeld and dmonitoringmodeld as they require specific model files
-      processes = [p for p in ["selfdrived", "controlsd", "card", "radard", "plannerd", "calibrationd", 
-                               "dmonitoringd", "locationd", "paramsd", "lagd", "ubloxd", "torqued"] 
+      processes = [p for p in ["selfdrived", "controlsd", "card", "radard", "plannerd", "calibrationd",
+                               "dmonitoringd", "locationd", "paramsd", "lagd", "ubloxd", "torqued"]
                    if p not in EXCLUDED_PROCS]
       relr = regen_and_save(sn.route_name.canonical_name, sn.segment_num, processes=processes, upload=upload,
                             outdir=os.path.join(FAKEDATA, fake_dongle_id), disable_tqdm=disable_tqdm, dummy_driver_cam=True)

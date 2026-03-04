@@ -271,7 +271,7 @@ class LongitudinalPlanner:
 
     In E2E mode, the MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar.
-    
+
     Chill Mode (relaxed personality) applies reduced jerk cost for smoother driving.
     """
     # Apply Chill Mode jerk factor for relaxed personality
@@ -279,7 +279,9 @@ class LongitudinalPlanner:
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
     # E2E-specific weights that prioritize following model predictions
+    # 6 cost weights to match cost_y_expr dimensions: [x_ego_obs, x_ego, v_ego, a_ego, a_change, jerk]
     cost_weights = [
+      E2E_X_EGO_COST,    # Obstacle distance cost
       E2E_X_EGO_COST,    # Position cost - follow model's trajectory
       E2E_V_EGO_COST,    # Velocity cost - match model's velocity
       E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
