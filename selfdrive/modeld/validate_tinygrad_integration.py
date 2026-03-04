@@ -29,7 +29,6 @@ if _os.environ.get('CPU_LLVM') is None:
   _os.environ['CPU_LLVM'] = '1'
 del _os
 
-import os
 import sys
 import time
 import argparse
@@ -38,22 +37,17 @@ from pathlib import Path
 # Add openpilot to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import numpy as np
-
 from openpilot.common.git import get_commit
 from openpilot.system.hardware import PC
 from openpilot.selfdrive.modeld.tinygrad_runner import (
   TinygradRunner,
-  RunnerConfig,
   create_runner,
   ModelLoadError,
 )
 from openpilot.selfdrive.modeld.tici_gpu_tuning import (
   detect_tici_hardware,
   check_gpu_compatibility,
-  GPU_CONFIG,
 )
-from openpilot.selfdrive.modeld.constants import ModelConstants
 
 
 def print_header(text: str):
@@ -104,12 +98,12 @@ def test_model_loading() -> tuple[bool, TinygradRunner | None]:
     print(f"Models loaded in {load_time:.2f}s")
 
     # Verify model metadata
-    print(f"\nVision Model:")
+    print("\nVision Model:")
     print(f"  Inputs: {runner.vision_input_names}")
     print(f"  Output size: {runner.vision_output_size}")
     print(f"  Output slices: {list(runner.vision_output_slices.keys())}")
 
-    print(f"\nPolicy Model:")
+    print("\nPolicy Model:")
     print(f"  Input shapes: {runner.policy_input_shapes}")
     print(f"  Output size: {runner.policy_output_size}")
     print(f"  Output slices: {list(runner.policy_output_slices.keys())}")
@@ -139,14 +133,14 @@ def test_inference_performance(runner: TinygradRunner) -> bool:
     print_result("Inference performance", False, "Runner not initialized")
     return False
 
-  print(f"Running inference tests...")
-  print(f"Target: 20Hz (50ms frame time, 40ms inference budget)")
+  print("Running inference tests...")
+  print("Target: 20Hz (50ms frame time, 40ms inference budget)")
 
   # Note: Full inference test requires actual VisionIPC buffers
   # This is a simplified test that checks runner initialization
   stats = runner.get_stats()
 
-  print(f"\nPerformance Stats:")
+  print("\nPerformance Stats:")
   print(f"  Hardware: {stats['gpu_config']['hardware_type']} ({stats['gpu_config']['device']})")
   print(f"  Avg inference time: {stats['avg_inference_time_ms']:.2f}ms")
   print(f"  Target: {stats['target_inference_time_ms']:.1f}ms")

@@ -29,7 +29,6 @@ Usage:
   policy_output = runner.run_policy(policy_inputs)
 """
 
-import os
 import pickle
 import time
 from pathlib import Path
@@ -39,14 +38,12 @@ from dataclasses import dataclass
 import numpy as np
 from tinygrad.tensor import Tensor
 from tinygrad.device import Device
-from tinygrad.engine.jit import TinyJit
-from tinygrad.helpers import Context, DEBUG, getenv
+from tinygrad.helpers import DEBUG
 
 from openpilot.common.file_chunker import read_file_chunked
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.modeld.tici_gpu_tuning import (
   setup_tici_environment,
-  check_gpu_compatibility,
   GPU_CONFIG,
   PerformanceProfiler,
 )
@@ -164,8 +161,8 @@ class TinygradRunner:
       self.policy_run_fn = pickle.loads(read_file_chunked(str(self.config.policy_pkl_path)))
     except (AssertionError, AttributeError, pickle.UnpicklingError, TypeError) as e:
       raise ModelLoadError(
-        f"Failed to load pickled model: {e}. "
-        "Models need to be recompiled with current tinygrad version. "
+        f"Failed to load pickled model: {e}. " +
+        "Models need to be recompiled with current tinygrad version. " +
         "Run: python selfdrive/modeld/compile_warp.py"
       ) from e
 

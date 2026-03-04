@@ -55,11 +55,11 @@ def test_modeld_replay():
   print("Running modeld replay...")
   output_logs = replay_process(modeld_cfg, lr, frs, disable_progress=False)
 
-  print(f"\n✅ Modeld replay successful!")
+  print("\n✅ Modeld replay successful!")
   print(f"Generated {len(output_logs)} output messages")
 
   # Check output types
-  output_types = set(m.which() for m in output_logs)
+  output_types = {m.which() for m in output_logs}
   print(f"Output message types: {output_types}")
 
   # Check for expected outputs
@@ -78,10 +78,10 @@ def test_modeld_replay():
     if exec_times:
       avg_time = sum(exec_times) / len(exec_times)
       max_time = max(exec_times)
-      print(f"\nExecution times:")
+      print("\nExecution times:")
       print(f"  Average: {avg_time*1000:.2f}ms")
       print(f"  Max: {max_time*1000:.2f}ms")
-      print(f"  Target: 40ms (for 20Hz)")
+      print("  Target: 40ms (for 20Hz)")
 
       if avg_time <= 0.04:  # 40ms
         print("✅ Meets 20Hz target (CPU mode)")
