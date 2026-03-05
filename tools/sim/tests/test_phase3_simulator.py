@@ -190,17 +190,17 @@ class TestPhase3ClosedLoop:
     """Verify closed-loop feedback architecture."""
     import inspect
     from openpilot.tools.sim.bridge import common
-    
+
     source = inspect.getsource(common.SimulatorBridge)
-    
+
     # Check for World Model initialization
     assert 'world_model' in source, "Should have world_model attribute"
     assert 'initialize' in source, "Should initialize World Model"
-    
+
     # Check for adversarial scenario integration
     assert 'adversarial_runner' in source, "Should have adversarial_runner"
-    assert 'adversarial_scenario' in source.lower(), "Should apply adversarial scenarios"
-    
+    assert 'adversarial_runner.update' in source, "Should apply adversarial scenarios"
+
     print("✓ Closed-loop feedback architecture in place")
 
   def test_run_bridge_command_line_flags(self):

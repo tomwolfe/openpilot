@@ -49,8 +49,7 @@ class SimulatorCarState:
     self.gas_pressed = False
 
     # Gear
-    self.gear = car.CarState.GearSlot.drive
-    self.gear_shifter = car.CarState.GearShifter.drive
+    self.gear_shifter = structs.CarState.GearShifter.drive
 
     # Cruise control
     self.cruise_available = True
@@ -113,7 +112,6 @@ class SimulatorCarState:
       CS.brakePressed = self.brake_pressed
       CS.gasPressed = self.gas_pressed
 
-      CS.gear = self.gear
       CS.gearShifter = self.gear_shifter
 
       CS.cruiseState.available = self.cruise_available
