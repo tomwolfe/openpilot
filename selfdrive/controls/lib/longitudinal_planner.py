@@ -12,7 +12,7 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
-  A_CHANGE_COST, LIMIT_COST, DANGER_ZONE_COST
+  A_CHANGE_COST, LIMIT_COST, DANGER_ZONE_COST, X_EGO_OBSTACLE_COST
 )
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
@@ -252,12 +252,15 @@ class LongitudinalPlanner:
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
     # E2E-specific weights that prioritize following model predictions
+    # Note: must have 6 weights to match COST_DIM (COST_E_DIM + 1)
+    # The 6th weight (X_EGO_OBSTACLE_COST) is for obstacle distance cost
     cost_weights = [
       E2E_X_EGO_COST,    # Position cost - follow model's trajectory
       E2E_V_EGO_COST,    # Velocity cost - match model's velocity
       E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
       jerk_factor * a_change_cost,
-      jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers
+      jerk_factor * E2E_J_EGO_COST,  # Jerk cost - allow model's maneuvers
+      X_EGO_OBSTACLE_COST,  # Obstacle distance cost (needed for COST_DIM)
     ]
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.mpc.set_cost_weights(cost_weights, constraint_cost_weights)

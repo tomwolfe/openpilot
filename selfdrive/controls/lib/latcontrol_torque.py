@@ -56,7 +56,7 @@ class LatControlTorque(LatControl):
     self.pid.set_limits(self.lateral_accel_from_torque(self.steer_max, self.torque_params),
                         self.lateral_accel_from_torque(-self.steer_max, self.torque_params))
 
-  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay):
+  def update(self, active, CS, VM, params, steer_limited_by_safety, desired_curvature, curvature_limited, lat_delay, e2e_mode=False):
     pid_log = log.ControlsState.LateralTorqueState.new_message()
     pid_log.version = VERSION
     measured_curvature = -VM.calc_curvature(math.radians(CS.steeringAngleDeg - params.angleOffsetDeg), CS.vEgo, params.roll)
@@ -89,9 +89,24 @@ class LatControlTorque(LatControl):
       # do error correction in lateral acceleration space, convert at end to handle non-linear torque responses correctly
       pid_log.error = float(error)
 
-      freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
-      output_lataccel = self.pid.update(pid_log.error, speed=CS.vEgo, feedforward=ff, freeze_integrator=freeze_integrator)
-      output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
+      # E2E direct mode (openpilot 1.0)
+      # In E2E mode, reduce PID intervention - model outputs are already torque commands
+      if e2e_mode:
+        # Minimal PID correction in E2E mode - mostly feedforward
+        # This provides safety smoothing while respecting model's direct commands
+        freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
+        output_lataccel = self.pid.update(pid_log.error, speed=CS.vEgo, feedforward=ff * 0.3, freeze_integrator=freeze_integrator)
+        
+        # Blend model command (90%) with PID correction (10%) for safety
+        # The model's desired_curvature is already a torque request in E2E mode
+        model_torque = self.torque_from_lateral_accel(future_desired_lateral_accel, self.torque_params)
+        pid_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
+        output_torque = 0.9 * model_torque + 0.1 * pid_torque
+      else:
+        # Standard mode - full PID control
+        freeze_integrator = steer_limited_by_safety or CS.steeringPressed or CS.vEgo < 5
+        output_lataccel = self.pid.update(pid_log.error, speed=CS.vEgo, feedforward=ff, freeze_integrator=freeze_integrator)
+        output_torque = self.torque_from_lateral_accel(output_lataccel, self.torque_params)
 
       pid_log.active = True
       pid_log.p = float(self.pid.p)

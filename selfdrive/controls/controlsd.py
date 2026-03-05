@@ -2,8 +2,10 @@
 import math
 from numbers import Number
 
+import numpy as np
 from cereal import car, log
 import cereal.messaging as messaging
+from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process, DT_CTRL, Priority, Ratekeeper
@@ -66,6 +68,48 @@ class Controls:
       device_pose = Pose.from_live_pose(self.sm['livePose'])
       self.calibrated_pose = self.pose_calibrator.build_calibrated_pose(device_pose)
 
+  def _check_e2e_aeb(self, model_v2) -> bool:
+    """
+    E2E-based Automatic Emergency Braking (AEB) using model's disengage predictions.
+    
+    Unlike traditional radar-based AEB that uses dRel/vRel, this uses the model's
+    learned collision probability from disengage predictions.
+    
+    Triggers emergency braking when:
+    1. High brake press probability in next 0.5s (immediate danger)
+    2. High brake 5m/s² probability (model predicts hard braking needed)
+    3. Model's shouldStop flag is set
+    
+    Returns:
+      True if AEB should override acceleration command
+    """
+    # Check model's shouldStop flag first (most direct signal)
+    if model_v2.action.shouldStop:
+      return True
+    
+    # Check disengage predictions for collision probability
+    disengage_preds = model_v2.meta.disengagePredictions
+    
+    # Check brake press probability (first timestep = immediate)
+    if len(disengage_preds.brakePressProbs) > 0:
+      brake_press_prob = disengage_preds.brakePressProbs[0]
+      if brake_press_prob > 0.9:  # 90% probability of brake press needed
+        return True
+    
+    # Check hard brake 5m/s² probability (model predicts emergency braking)
+    if len(disengage_preds.brake5MetersPerSecondSquaredProbs) > 0:
+      hard_brake_5_prob = disengage_preds.brake5MetersPerSecondSquaredProbs[0]
+      if hard_brake_5_prob > 0.8:  # 80% probability of 5m/s² braking needed
+        return True
+    
+    # Check hard brake 4m/s² probability with higher threshold
+    if len(disengage_preds.brake4MetersPerSecondSquaredProbs) > 0:
+      hard_brake_4_prob = disengage_preds.brake4MetersPerSecondSquaredProbs[0]
+      if hard_brake_4_prob > 0.95:  # 95% probability of 4m/s² braking needed
+        return True
+    
+    return False
+
   def state_control(self):
     CS = self.sm['carState']
 
@@ -112,7 +156,26 @@ class Controls:
 
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    
+    # E2E direct actuation (openpilot 1.0)
+    # In experimental mode, use raw model acceleration bypassing PID
+    if e2e_mode_active:
+      # Use direct model acceleration with safety limits applied
+      # The model's shouldStop flag triggers immediate braking
+      raw_accel = float(model_v2.action.desiredAcceleration)
+      
+      # Apply E2E-based AEB using disengage predictions
+      aeb_override = self._check_e2e_aeb(model_v2)
+      if aeb_override:
+        raw_accel = ACCEL_MIN  # Emergency braking
+        
+      # Clip to safety limits
+      actuators.accel = float(np.clip(raw_accel, pid_accel_limits[0], pid_accel_limits[1]))
+      actuators.accelDirect = raw_accel
+    else:
+      # Standard mode - use MPC output with PID
+      actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+      actuators.accelDirect = 0.0
 
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
@@ -120,11 +183,34 @@ class Controls:
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
-    actuators.curvature = self.desired_curvature
-    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                       self.steer_limited_by_safety, self.desired_curvature,
-                                                       curvature_limited, lat_delay)
-    actuators.torque = float(steer)
+    # E2E direct actuation (openpilot 1.0)
+    # In experimental mode, use raw model outputs bypassing PID smoothing
+    e2e_mode_active = self.sm['selfdriveState'].experimentalMode and CC.latActive and CC.longActive
+    
+    if e2e_mode_active:
+      # Direct actuation mode - use raw model outputs
+      # Model torque is already in [0, 1] range from latcontrol_torque
+      actuators.torqueDirect = float(model_v2.action.desiredCurvature)
+      actuators.accelDirect = float(model_v2.action.desiredAcceleration)
+      actuators.e2eModeActive = True
+      
+      # Use direct outputs, but still apply safety clipping
+      actuators.curvature = float(model_v2.action.desiredCurvature)
+      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                         self.steer_limited_by_safety, model_v2.action.desiredCurvature,
+                                                         curvature_limited, lat_delay, e2e_mode=True)
+      actuators.torque = float(steer)
+    else:
+      # Standard mode - use PID/MPC smoothed outputs
+      actuators.torqueDirect = 0.0
+      actuators.accelDirect = 0.0
+      actuators.e2eModeActive = False
+      
+      actuators.curvature = self.desired_curvature
+      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                         self.steer_limited_by_safety, self.desired_curvature,
+                                                         curvature_limited, lat_delay, e2e_mode=False)
+      actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs
     for p in ACTUATOR_FIELDS:

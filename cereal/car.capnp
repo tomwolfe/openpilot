@@ -375,6 +375,13 @@ struct CarControl {
     torqueOutputCan @8: Float32;   # value sent over can to the car
     speed @6: Float32;  # m/s
 
+    # E2E direct actuation (openpilot 1.0)
+    # When experimentalMode is active, these contain raw model outputs
+    # bypassing PID/MPC smoothing
+    torqueDirect @9: Float32;       # Raw torque from model [0.0, 1.0]
+    accelDirect @10: Float32;       # Raw acceleration from model [m/s^2]
+    e2eModeActive @11: Bool;        # Whether E2E direct actuation is active
+
     enum LongControlState @0xe40f3a917d908282{
       off @0;
       pid @1;

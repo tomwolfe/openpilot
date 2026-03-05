@@ -298,8 +298,11 @@ class LongitudinalMpc:
 
     if e2e_mode:
       # E2E mode: heavily weight following model's predictions
+      # Note: must have 6 weights to match COST_DIM (COST_E_DIM + 1)
+      # The 6th weight (X_EGO_OBSTACLE_COST) is for obstacle distance cost
       cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
-                      jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
+                      jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST,
+                      X_EGO_OBSTACLE_COST]
     else:
       # Standard mode: traditional weights
       cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST,
