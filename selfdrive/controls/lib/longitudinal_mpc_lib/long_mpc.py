@@ -50,6 +50,9 @@ E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
 E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
 
+# E2E mode jerk weight for experimental mode - increased for smoother control
+E2E_J_EGO_COST_EXPERIMENTAL = 8.0  # Higher jerk penalty in experimental mode to reduce jerkiness
+
 # Fewer timestamps don't hurt performance and lead to
 # much better convergence of the MPC with low iterations
 N = 12
@@ -279,7 +282,7 @@ class LongitudinalMpc:
       self.solver.cost_set(i, 'Zl', Zl)
 
   def set_weights(self, prev_accel_constraint=True, personality=log.LongitudinalPersonality.standard,
-                  e2e_mode=False, e2e_v=None, e2e_a=None):
+                  e2e_mode=False, e2e_v=None, e2e_a=None, experimental_mode=False):
     """
     Set cost weights for the MPC optimizer.
 
@@ -292,14 +295,17 @@ class LongitudinalMpc:
       e2e_mode: Whether to use E2E-specific weights
       e2e_v: E2E velocity trajectory (used when e2e_mode=True)
       e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
+      experimental_mode: Whether in experimental mode (increases jerk penalty for smoother control)
     """
     jerk_factor = get_jerk_factor(personality)
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
     if e2e_mode:
       # E2E mode: heavily weight following model's predictions
+      # In experimental mode, increase jerk penalty for smoother control
+      e2e_j_cost = E2E_J_EGO_COST_EXPERIMENTAL if experimental_mode else E2E_J_EGO_COST
       cost_weights = [E2E_X_EGO_COST, E2E_V_EGO_COST, E2E_A_EGO_COST,
-                      jerk_factor * a_change_cost, jerk_factor * E2E_J_EGO_COST]
+                      jerk_factor * a_change_cost, jerk_factor * e2e_j_cost]
     else:
       # Standard mode: traditional weights
       cost_weights = [X_EGO_OBSTACLE_COST, X_EGO_COST, V_EGO_COST, A_EGO_COST,
@@ -348,7 +354,7 @@ class LongitudinalMpc:
     return lead_xv
 
   def update(self, radarstate, v_cruise, personality=log.LongitudinalPersonality.standard,
-             e2e_mode=False, e2e_v=None, e2e_a=None):
+             e2e_mode=False, e2e_v=None, e2e_a=None, experimental_mode=False):
     """
     Update the MPC optimizer with current state and targets.
 
@@ -362,6 +368,7 @@ class LongitudinalMpc:
       e2e_mode: Whether to use E2E trajectory following mode
       e2e_v: E2E velocity trajectory (used when e2e_mode=True)
       e2e_a: E2E acceleration trajectory (used when e2e_mode=True)
+      experimental_mode: Whether in experimental mode (increases jerk penalty for smoother control)
     """
     t_follow = get_T_FOLLOW(personality)
     v_ego = self.x0[1]

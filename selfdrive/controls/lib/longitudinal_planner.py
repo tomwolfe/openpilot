@@ -34,6 +34,10 @@ E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuver
 SAFETY_FLOOR_MARGIN = 0.5  # Additional margin for safety floor
 MIN_BRAKE_SAFETY_FACTOR = 1.2  # Model must brake at least this much before MPC overrides
 
+# Lead transition filter parameters - smooth transitions to prevent phantom braking
+LEAD_TRANSITION_FILTER_ALPHA = 0.3  # Smoothing factor for lead distance/velocity transitions
+LEAD_SWITCH_HYSTERESIS = 2.0  # Minimum distance difference (m) to switch lead focus
+
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -82,6 +86,13 @@ class LongitudinalPlanner:
     self.e2e_a_trajectory = np.zeros(CONTROL_N)
     self.e2e_prob = 0.0
     self.e2e_valid = False
+
+    # Lead transition filter - smooth transitions between leads to prevent phantom braking
+    self.lead_d_rel_filtered = None
+    self.lead_v_rel_filtered = None
+    self.prev_lead_id = -1
+    # Time constant for lead transition smoothing (seconds)
+    self.lead_transition_time_constant = 0.3
 
   @staticmethod
   def parse_model(model_msg):
@@ -176,11 +187,14 @@ class LongitudinalPlanner:
 
     if is_experimental and self.e2e_valid:
       # Set E2E-specific cost weights - heavily weight model's predictions
-      self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
+      # In experimental mode, increase jerk penalty for smoother control
+      self._set_e2e_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
+                            experimental_mode=True)
 
       # Pass E2E trajectory to MPC for guidance
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality,
-                           e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory)
+                           e2e_mode=True, e2e_v=self.e2e_v_trajectory, e2e_a=self.e2e_a_trajectory,
+                           experimental_mode=True)
     else:
       # Standard mode - use traditional radar/lead-car based planning
       self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
@@ -189,7 +203,8 @@ class LongitudinalPlanner:
     self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality,
                     e2e_mode=is_experimental and self.e2e_valid,
                     e2e_v=self.e2e_v_trajectory if self.e2e_valid else None,
-                    e2e_a=self.e2e_a_trajectory if self.e2e_valid else None)
+                    e2e_a=self.e2e_a_trajectory if self.e2e_valid else None,
+                    experimental_mode=is_experimental)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)
@@ -211,11 +226,14 @@ class LongitudinalPlanner:
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
+    # Vision-only lead logic: when radar is unavailable, use modelV2.leadsV3
+    lead_data = self._process_lead_data(sm, v_ego)
+
     # Safety floor: if lead car present, ensure we don't under-brake compared to radar-based distance
-    if sm['radarState'].leadOne.status and self.e2e_valid:
-      # Calculate minimum safe deceleration based on radar distance
-      lead_d_rel = sm['radarState'].leadOne.dRel
-      lead_v_rel = sm['radarState'].leadOne.vLead - v_ego
+    if lead_data['status'] and self.e2e_valid:
+      # Calculate minimum safe deceleration based on lead distance
+      lead_d_rel = lead_data['dRel']
+      lead_v_rel = lead_data['vRel']
 
       # Simple safety calculation: ensure we can stop before hitting lead
       if lead_d_rel > 0 and lead_v_rel < 0:  # Lead is closer and approaching
@@ -241,23 +259,109 @@ class LongitudinalPlanner:
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 
-  def _set_e2e_weights(self, prev_accel_constraint=True, personality=None):
+  def _process_lead_data(self, sm, v_ego):
+    """
+    Process lead car data, prioritizing vision leads when radar is unavailable.
+    Implements lead transition filtering to prevent phantom braking.
+    
+    Args:
+      sm: SubMaster with current state
+      v_ego: Ego vehicle speed
+    
+    Returns:
+      Dictionary with lead status, dRel, and vRel
+    """
+    radar_unavailable = not sm['radarState'].leadOne.status and not sm['radarState'].leadTwo.status
+    
+    # Check for vision leads from modelV2.leadsV3
+    leads_v3 = sm['modelV2'].leadsV3
+    has_vision_leads = len(leads_v3) > 0 and leads_v3[0].prob > 0.5
+    
+    if radar_unavailable and has_vision_leads:
+      # Use vision lead when radar is unavailable
+      vision_lead = leads_v3[0]
+      current_lead_id = 0  # Simple ID based on lead index
+      
+      # Apply lead transition filter to smooth switching between leads
+      if self.prev_lead_id != current_lead_id and self.prev_lead_id != -1:
+        # Lead switched - apply smoothing filter to prevent phantom braking
+        if self.lead_d_rel_filtered is not None:
+          # Smooth the transition using first-order filter
+          d_rel_raw = float(vision_lead.x[0])
+          self.lead_d_rel_filtered = (1 - LEAD_TRANSITION_FILTER_ALPHA) * self.lead_d_rel_filtered + LEAD_TRANSITION_FILTER_ALPHA * d_rel_raw
+          
+          v_rel_raw = float(vision_lead.v[0]) - v_ego
+          if self.lead_v_rel_filtered is not None:
+            self.lead_v_rel_filtered = (1 - LEAD_TRANSITION_FILTER_ALPHA) * self.lead_v_rel_filtered + LEAD_TRANSITION_FILTER_ALPHA * v_rel_raw
+          else:
+            self.lead_v_rel_filtered = v_rel_raw
+        else:
+          self.lead_d_rel_filtered = float(vision_lead.x[0])
+          self.lead_v_rel_filtered = float(vision_lead.v[0]) - v_ego
+      else:
+        # No lead switch - use raw values or initialize filter
+        self.lead_d_rel_filtered = float(vision_lead.x[0])
+        self.lead_v_rel_filtered = float(vision_lead.v[0]) - v_ego
+      
+      self.prev_lead_id = current_lead_id
+      
+      return {
+        'status': True,
+        'dRel': self.lead_d_rel_filtered if self.lead_d_rel_filtered is not None else float(vision_lead.x[0]),
+        'vRel': self.lead_v_rel_filtered if self.lead_v_rel_filtered is not None else float(vision_lead.v[0]) - v_ego,
+        'source': 'vision'
+      }
+    elif sm['radarState'].leadOne.status:
+      # Use radar lead when available - reset filter state
+      self.prev_lead_id = -1
+      self.lead_d_rel_filtered = None
+      self.lead_v_rel_filtered = None
+      
+      return {
+        'status': True,
+        'dRel': sm['radarState'].leadOne.dRel,
+        'vRel': sm['radarState'].leadOne.vLead - v_ego,
+        'source': 'radar'
+      }
+    else:
+      # No lead detected
+      self.prev_lead_id = -1
+      self.lead_d_rel_filtered = None
+      self.lead_v_rel_filtered = None
+      
+      return {
+        'status': False,
+        'dRel': 0.0,
+        'vRel': 0.0,
+        'source': 'none'
+      }
+
+  def _set_e2e_weights(self, prev_accel_constraint=True, personality=None, experimental_mode=False):
     """
     Set cost weights for E2E mode where MPC acts as safety/jerk filter.
 
     In E2E mode, the MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar.
+    
+    Args:
+      prev_accel_constraint: Whether to penalize acceleration changes
+      personality: Longitudinal personality setting
+      experimental_mode: Whether in experimental mode (increases jerk penalty for smoother control)
     """
+    from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import E2E_J_EGO_COST_EXPERIMENTAL
+    
     jerk_factor = 1.0  # Use default jerk factor
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
     # E2E-specific weights that prioritize following model predictions
+    # In experimental mode, increase jerk penalty for smoother control
+    e2e_j_cost = E2E_J_EGO_COST_EXPERIMENTAL if experimental_mode else E2E_J_EGO_COST
     cost_weights = [
       E2E_X_EGO_COST,    # Position cost - follow model's trajectory
       E2E_V_EGO_COST,    # Velocity cost - match model's velocity
       E2E_A_EGO_COST,    # Acceleration cost - match model's acceleration
       jerk_factor * a_change_cost,
-      jerk_factor * E2E_J_EGO_COST  # Jerk cost - allow model's maneuvers
+      jerk_factor * e2e_j_cost  # Jerk cost - allow model's maneuvers
     ]
     constraint_cost_weights = [LIMIT_COST, LIMIT_COST, LIMIT_COST, DANGER_ZONE_COST]
     self.mpc.set_cost_weights(cost_weights, constraint_cost_weights)
