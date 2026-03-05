@@ -206,6 +206,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
 
       if self.world.exit_event.is_set():
         self.shutdown()
+        break
 
       if self.rk.frame % self.TICKS_PER_FRAME == 0:
         self.world.tick()

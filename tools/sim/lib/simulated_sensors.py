@@ -105,7 +105,9 @@ class SimulatedSensors:
     self.pm.send('driverMonitoringState', dat)
 
   def send_camera_images(self, world: 'World'):
-    world.image_lock.acquire()
+    # Use timeout to allow thread to exit if lock is not available
+    if not world.image_lock.acquire(timeout=0.1):
+      return
     yuv = self.camerad.rgb_to_yuv(world.road_image)
     self.camerad.cam_send_yuv_road(yuv)
 
