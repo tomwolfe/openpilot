@@ -154,6 +154,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
           done_info=done_result[1],
         )
         simulation_state_send.send(simulation_state)
+        break
 
       if dual_camera:
         wide_road_image[...] = get_cam_as_rgb("rgb_wide")
