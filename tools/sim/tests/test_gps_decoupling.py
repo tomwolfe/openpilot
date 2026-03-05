@@ -139,14 +139,20 @@ class TestMetaDriveGPSDecoupled(TestSimBridgeBase):
     bridge_process = bridge.run(queue)
 
     try:
-      # Wait for bridge to start
-      time.sleep(2)
+      # Wait for bridge to start (up to 30s for asset download and initialization)
+      start_wait = time.monotonic()
+      while not bridge.started.value and time.monotonic() - start_wait < 30:
+        time.sleep(0.1)
+        if not bridge_process.is_alive():
+          break
 
-      # Verify bridge is running
+      # Verify bridge is running and started
       assert bridge_process.is_alive(), "Bridge should be running"
+      assert bridge.started.value, "Bridge failed to start within timeout"
 
       # Wait for test duration plus extra time for shutdown
-      bridge_process.join(timeout=test_duration + 5)
+      # The bridge should exit on its own after test_duration
+      bridge_process.join(timeout=test_duration + 10)
 
       # Bridge should complete successfully (allow graceful shutdown time)
       if bridge_process.is_alive():
@@ -154,9 +160,10 @@ class TestMetaDriveGPSDecoupled(TestSimBridgeBase):
         messages = []
         while not queue.empty():
           messages.append(queue.get())
-        print(f"Queue messages: {messages}")
+        if messages:
+          print(f"Queue messages: {messages}")
       
-      assert not bridge_process.is_alive(), "Bridge should complete test run"
+      assert not bridge_process.is_alive(), "Bridge should complete test run on its own"
 
       print("✓ MetaDrive bridge runs successfully without GPS")
 
