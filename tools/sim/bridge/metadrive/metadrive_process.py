@@ -98,6 +98,10 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   steer_ratio = 8
   vc = [0,0]
 
+  # Start timer immediately for test runs to ensure timeout works even without engagement
+  if test_run:
+    start_time = time.monotonic()
+
   while not exit_event.is_set():
     vehicle_state = metadrive_vehicle_state(
       velocity=vec3(x=float(env.vehicle.velocity[0]), y=float(env.vehicle.velocity[1]), z=0),
@@ -118,7 +122,10 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
       if should_reset:
         lane_idx_prev = reset()
-        start_time = None
+        if test_run:
+          start_time = time.monotonic()
+        else:
+          start_time = None
 
     is_engaged = op_engaged.is_set()
     if is_engaged and start_time is None:
