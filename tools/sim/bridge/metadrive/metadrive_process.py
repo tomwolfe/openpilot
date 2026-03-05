@@ -81,7 +81,6 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx_prev
 
   lane_idx_prev = reset()
-  start_time = None
 
   def get_cam_as_rgb(cam):
     cam = env.engine.sensors[cam]
@@ -98,9 +97,12 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   steer_ratio = 8
   vc = [0,0]
 
-  # Start timer immediately for test runs to ensure timeout works even without engagement
+  # Start timer after environment is fully initialized (after first reset)
+  # For test runs, start the timer now that the environment is ready
   if test_run:
     start_time = time.monotonic()
+  else:
+    start_time = None
 
   while not exit_event.is_set():
     vehicle_state = metadrive_vehicle_state(

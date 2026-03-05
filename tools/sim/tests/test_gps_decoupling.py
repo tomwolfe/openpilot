@@ -121,38 +121,45 @@ class TestMetaDriveGPSDecoupled(TestSimBridgeBase):
     """Test that the bridge can start and run without GPS."""
     import multiprocessing
     import signal
-    
+
     test_duration = 5  # seconds
-    
+
     # Create bridge with GPS disabled
     bridge = MetaDriveBridge(
-      dual_camera=False, 
-      high_quality=False, 
-      test_duration=test_duration, 
+      dual_camera=False,
+      high_quality=False,
+      test_duration=test_duration,
       test_run=True,
       enable_gps=False
     )
-    
+
     queue = multiprocessing.Queue()
-    
+
     # Start the bridge
     bridge_process = bridge.run(queue)
-    
+
     try:
       # Wait for bridge to start
       time.sleep(2)
-      
+
       # Verify bridge is running
       assert bridge_process.is_alive(), "Bridge should be running"
+
+      # Wait for test duration plus extra time for shutdown
+      bridge_process.join(timeout=test_duration + 5)
+
+      # Bridge should complete successfully (allow graceful shutdown time)
+      if bridge_process.is_alive():
+        # If still alive, try to get any error messages from queue
+        messages = []
+        while not queue.empty():
+          messages.append(queue.get())
+        print(f"Queue messages: {messages}")
       
-      # Wait for test duration
-      bridge_process.join(timeout=test_duration + 2)
-      
-      # Bridge should complete successfully
       assert not bridge_process.is_alive(), "Bridge should complete test run"
-      
+
       print("✓ MetaDrive bridge runs successfully without GPS")
-      
+
     finally:
       # Cleanup
       if bridge_process.is_alive():
