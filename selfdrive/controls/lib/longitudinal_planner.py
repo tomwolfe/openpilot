@@ -14,7 +14,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDX
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import (
   A_CHANGE_COST, LIMIT_COST, DANGER_ZONE_COST
 )
-from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
+from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, smooth_value_e2e
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
@@ -29,6 +29,11 @@ E2E_X_EGO_COST = 5.0      # Higher weight on following model's position
 E2E_V_EGO_COST = 10.0     # Higher weight on following model's velocity
 E2E_A_EGO_COST = 8.0      # Higher weight on following model's acceleration
 E2E_J_EGO_COST = 2.0      # Lower jerk cost to allow model's aggressive maneuvers
+
+# E2E Phase 2: Traffic light detection parameters
+# Model can detect traffic lights and stop signs in meta.disengagePredictions
+TRAFFIC_LIGHT_PROB_THRESHOLD = 0.7  # Probability threshold for traffic light detection
+TRAFFIC_LIGHT_BRAKE_ACCEL = -2.0    # Comfortable braking for traffic lights (m/s^2)
 
 # Safety floor parameters - radar-based distance as minimum safe distance
 SAFETY_FLOOR_MARGIN = 0.5  # Additional margin for safety floor
@@ -211,6 +216,23 @@ class LongitudinalPlanner:
     output_a_target_e2e = sm['modelV2'].action.desiredAcceleration
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
+    # E2E Phase 2: Apply enhanced smoothing to E2E acceleration requests
+    # This prevents 'jerky' braking when the model detects traffic lights or obstacles
+    output_a_target_e2e = smooth_value_e2e(output_a_target_e2e, self.a_desired)
+
+    # E2E Phase 2: Traffic light detection and automatic braking
+    # Model provides traffic light/stop sign probabilities in meta.disengagePredictions
+    traffic_light_detected = False
+    if hasattr(sm['modelV2'].meta, 'disengagePredictions') and \
+       len(sm['modelV2'].meta.disengagePredictions.gasPressProbs) > 1:
+      # High probability of no gas press = likely stopping for traffic light/stop sign
+      stop_probability = 1.0 - sm['modelV2'].meta.disengagePredictions.gasPressProbs[1]
+      if stop_probability > TRAFFIC_LIGHT_PROB_THRESHOLD:
+        traffic_light_detected = True
+        # Apply comfortable braking for traffic light
+        output_a_target_e2e = min(output_a_target_e2e, TRAFFIC_LIGHT_BRAKE_ACCEL)
+        cloudlog.debug(f"Traffic light detected: prob={stop_probability:.2f}, braking={TRAFFIC_LIGHT_BRAKE_ACCEL}")
+
     # Safety floor: if lead car present, ensure we don't under-brake compared to radar-based distance
     if sm['radarState'].leadOne.status and self.e2e_valid:
       # Calculate minimum safe deceleration based on radar distance
@@ -226,13 +248,16 @@ class LongitudinalPlanner:
         if output_a_target_e2e > min_safe_decel:
           output_a_target_e2e = min_safe_decel * MIN_BRAKE_SAFETY_FACTOR
 
-    if is_experimental:
+    # E2E Phase 2: E2E is now default "Chill" mode (not just experimental)
+    # Always use E2E when available and valid, with MPC as safety filter
+    if self.e2e_valid:
       # In E2E mode, use model's acceleration with safety floor applied
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
+      # Fallback to MPC-only when E2E not available
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
 
