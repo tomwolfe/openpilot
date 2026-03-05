@@ -263,25 +263,25 @@ class LongitudinalPlanner:
     """
     Process lead car data, prioritizing vision leads when radar is unavailable.
     Implements lead transition filtering to prevent phantom braking.
-    
+
     Args:
       sm: SubMaster with current state
       v_ego: Ego vehicle speed
-    
+
     Returns:
       Dictionary with lead status, dRel, and vRel
     """
     radar_unavailable = not sm['radarState'].leadOne.status and not sm['radarState'].leadTwo.status
-    
+
     # Check for vision leads from modelV2.leadsV3
     leads_v3 = sm['modelV2'].leadsV3
     has_vision_leads = len(leads_v3) > 0 and leads_v3[0].prob > 0.5
-    
+
     if radar_unavailable and has_vision_leads:
       # Use vision lead when radar is unavailable
       vision_lead = leads_v3[0]
       current_lead_id = 0  # Simple ID based on lead index
-      
+
       # Apply lead transition filter to smooth switching between leads
       if self.prev_lead_id != current_lead_id and self.prev_lead_id != -1:
         # Lead switched - apply smoothing filter to prevent phantom braking
@@ -289,7 +289,7 @@ class LongitudinalPlanner:
           # Smooth the transition using first-order filter
           d_rel_raw = float(vision_lead.x[0])
           self.lead_d_rel_filtered = (1 - LEAD_TRANSITION_FILTER_ALPHA) * self.lead_d_rel_filtered + LEAD_TRANSITION_FILTER_ALPHA * d_rel_raw
-          
+
           v_rel_raw = float(vision_lead.v[0]) - v_ego
           if self.lead_v_rel_filtered is not None:
             self.lead_v_rel_filtered = (1 - LEAD_TRANSITION_FILTER_ALPHA) * self.lead_v_rel_filtered + LEAD_TRANSITION_FILTER_ALPHA * v_rel_raw
@@ -302,9 +302,9 @@ class LongitudinalPlanner:
         # No lead switch - use raw values or initialize filter
         self.lead_d_rel_filtered = float(vision_lead.x[0])
         self.lead_v_rel_filtered = float(vision_lead.v[0]) - v_ego
-      
+
       self.prev_lead_id = current_lead_id
-      
+
       return {
         'status': True,
         'dRel': self.lead_d_rel_filtered if self.lead_d_rel_filtered is not None else float(vision_lead.x[0]),
@@ -316,7 +316,7 @@ class LongitudinalPlanner:
       self.prev_lead_id = -1
       self.lead_d_rel_filtered = None
       self.lead_v_rel_filtered = None
-      
+
       return {
         'status': True,
         'dRel': sm['radarState'].leadOne.dRel,
@@ -328,7 +328,7 @@ class LongitudinalPlanner:
       self.prev_lead_id = -1
       self.lead_d_rel_filtered = None
       self.lead_v_rel_filtered = None
-      
+
       return {
         'status': False,
         'dRel': 0.0,
@@ -342,14 +342,14 @@ class LongitudinalPlanner:
 
     In E2E mode, the MPC heavily weights following the model's predicted
     velocity and acceleration rather than calculating targets from radar.
-    
+
     Args:
       prev_accel_constraint: Whether to penalize acceleration changes
       personality: Longitudinal personality setting
       experimental_mode: Whether in experimental mode (increases jerk penalty for smoother control)
     """
     from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import E2E_J_EGO_COST_EXPERIMENTAL
-    
+
     jerk_factor = 1.0  # Use default jerk factor
     a_change_cost = A_CHANGE_COST if prev_accel_constraint else 0
 
