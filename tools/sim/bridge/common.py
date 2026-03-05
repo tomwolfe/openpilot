@@ -38,7 +38,7 @@ def rk_loop(function, hz, exit_event: threading.Event):
 class SimulatorBridge(ABC):
   TICKS_PER_FRAME = 5
 
-  def __init__(self, dual_camera, high_quality):
+  def __init__(self, dual_camera, high_quality, enable_gps=True):
     set_params_enabled()
     self.params = Params()
     self.params.put_bool("AlphaLongitudinalEnabled", True)
@@ -47,6 +47,7 @@ class SimulatorBridge(ABC):
 
     self.dual_camera = dual_camera
     self.high_quality = high_quality
+    self.enable_gps = enable_gps
 
     self._exit_event: threading.Event | None = None
     self._threads = []
@@ -106,7 +107,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     self.world = self.spawn_world(q)
 
     self.simulated_car = SimulatedCar()
-    self.simulated_sensors = SimulatedSensors(self.dual_camera)
+    self.simulated_sensors = SimulatedSensors(self.dual_camera, enable_gps=self.enable_gps)
 
     self._exit_event = threading.Event()
 

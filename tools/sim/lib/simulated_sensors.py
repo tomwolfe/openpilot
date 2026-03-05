@@ -14,8 +14,12 @@ if TYPE_CHECKING:
 class SimulatedSensors:
   """Simulates the C3 sensors (acc, gyro, gps, peripherals, dm state, cameras) to OpenPilot"""
 
-  def __init__(self, dual_camera=False):
-    self.pm = messaging.PubMaster(['accelerometer', 'gyroscope', 'gpsLocationExternal', 'driverStateV2', 'driverMonitoringState', 'peripheralState'])
+  def __init__(self, dual_camera=False, enable_gps=True):
+    self.enable_gps = enable_gps
+    pub_messages = ['accelerometer', 'gyroscope', 'driverStateV2', 'driverMonitoringState', 'peripheralState']
+    if self.enable_gps:
+      pub_messages.append('gpsLocationExternal')
+    self.pm = messaging.PubMaster(pub_messages)
     self.camerad = Camerad(dual_camera=dual_camera)
     self.last_perp_update = 0
     self.last_dmon_update = 0
@@ -40,7 +44,8 @@ class SimulatedSensors:
       self.pm.send('gyroscope', dat)
 
   def send_gps_message(self, simulator_state: 'SimulatorState'):
-    if not simulator_state.valid:
+    """Send GPS messages only if GPS is enabled. System can operate without GPS."""
+    if not self.enable_gps or not simulator_state.valid:
       return
 
     # transform from vel to NED
