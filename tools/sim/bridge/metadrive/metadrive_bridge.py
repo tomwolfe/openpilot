@@ -50,12 +50,31 @@ def create_map(track_size=60):
 class MetaDriveBridge(SimulatorBridge):
   TICKS_PER_FRAME = 5
 
-  def __init__(self, dual_camera, high_quality, test_duration=math.inf, test_run=False, enable_gps=True):
+  def __init__(self, dual_camera, high_quality, test_duration=math.inf, test_run=False, 
+               enable_gps=True, enable_world_model=False, enable_adversarial=False):
     super().__init__(dual_camera, high_quality, enable_gps=enable_gps)
 
     self.should_render = False
     self.test_run = test_run
     self.test_duration = test_duration if self.test_run else math.inf
+    
+    # Phase 3: Closed-loop enhancements
+    self.enable_world_model = enable_world_model
+    self.enable_adversarial = enable_adversarial
+    self.world_model = None
+    self.adversarial_runner = None
+    
+    if self.enable_world_model:
+      from openpilot.tools.sim.lib.world_model import create_world_model
+      self.world_model = create_world_model()
+      print("[MetaDriveBridge] World Model enabled for closed-loop prediction")
+    
+    if self.enable_adversarial:
+      from openpilot.tools.sim.lib.adversarial_scenarios import AdversarialScenarioRunner, create_test_scenarios
+      self.adversarial_runner = AdversarialScenarioRunner()
+      for scenario in create_test_scenarios():
+        self.adversarial_runner.add_scenario(scenario)
+      print("[MetaDriveBridge] Adversarial scenarios enabled for stress-testing")
 
   def spawn_world(self, queue: Queue):
     sensors = {

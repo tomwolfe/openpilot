@@ -6,10 +6,12 @@ from multiprocessing import Queue
 
 from openpilot.tools.sim.bridge.metadrive.metadrive_bridge import MetaDriveBridge
 
-def create_bridge(dual_camera, high_quality, enable_gps=True):
+def create_bridge(dual_camera, high_quality, enable_gps=True, enable_world_model=False, enable_adversarial=False):
   queue: Any = Queue()
 
-  simulator_bridge = MetaDriveBridge(dual_camera, high_quality, enable_gps=enable_gps)
+  simulator_bridge = MetaDriveBridge(dual_camera, high_quality, enable_gps=enable_gps,
+                                      enable_world_model=enable_world_model,
+                                      enable_adversarial=enable_adversarial)
   simulator_process = simulator_bridge.run(queue)
 
   return queue, simulator_process, simulator_bridge
@@ -24,13 +26,23 @@ def parse_args(add_args=None):
   parser.add_argument('--high_quality', action='store_true')
   parser.add_argument('--dual_camera', action='store_true')
   parser.add_argument('--no_gps', action='store_true', help='Disable GPS simulation to test GPS-decoupled operation')
+  
+  # Phase 3: Closed-loop enhancements
+  parser.add_argument('--world_model', action='store_true', help='Enable World Model for closed-loop prediction')
+  parser.add_argument('--adversarial', action='store_true', help='Enable adversarial scenario injection for stress-testing')
 
   return parser.parse_args(add_args)
 
 if __name__ == "__main__":
   args = parse_args()
 
-  queue, simulator_process, simulator_bridge = create_bridge(args.dual_camera, args.high_quality, enable_gps=not args.no_gps)
+  queue, simulator_process, simulator_bridge = create_bridge(
+    args.dual_camera, 
+    args.high_quality, 
+    enable_gps=not args.no_gps,
+    enable_world_model=args.world_model,
+    enable_adversarial=args.adversarial
+  )
 
   if args.joystick:
     # start input poll for joystick

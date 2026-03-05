@@ -123,6 +123,15 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     for _ in range(20):
       self.world.tick()
 
+    # Phase 3: Initialize World Model with first frame if enabled
+    if hasattr(self, 'world_model') and self.world_model is not None:
+      self.world.read_cameras()  # Get initial frame
+      self.world_model.initialize(self.world.road_image.copy())
+      print("[Bridge] World Model initialized with first frame")
+
+    # Phase 3: Initialize adversarial scenario runner if enabled
+    scenario_start_time = time.monotonic() if hasattr(self, 'adversarial_runner') and self.adversarial_runner is not None else None
+
     while self._keep_alive:
       throttle_out = steer_out = brake_out = 0.0
       throttle_op = steer_op = brake_op = 0.0
@@ -205,6 +214,18 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       # don't print during test, so no print/IO Block between OP and metadrive processes
       if not self.test_run and self.rk.frame % 25 == 0:
         self.print_status()
+
+      # Phase 3: Apply adversarial scenarios if enabled
+      if hasattr(self, 'adversarial_runner') and self.adversarial_runner is not None and scenario_start_time is not None:
+        elapsed = time.monotonic() - scenario_start_time
+        if self.world.road_image is not None and self.world.road_image.any():
+          modified_frame, status = self.adversarial_runner.update(
+            self.world.road_image.copy(),
+            elapsed
+          )
+          if status['active_scenario']:
+            if self.rk.frame % 100 == 0:  # Print every 5 seconds
+              print(f"  [Adversarial] Active: {status['active_scenario']} ({status['scenario_progress']*100:.0f}%)")
 
       self.started.value = True
 
