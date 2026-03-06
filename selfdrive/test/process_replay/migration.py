@@ -188,18 +188,9 @@ def migrate_liveLocationKalman(msgs):
 
 @migration(inputs=["controlsState"], product="selfdriveState")
 def migrate_controlsState(msgs):
-  add_ops = []
-  for _, msg in msgs:
-    m = messaging.new_message('selfdriveState')
-    m.valid = msg.valid
-    m.logMonoTime = msg.logMonoTime
-    ss = m.selfdriveState
-    for field in ("enabled", "active", "state", "engageable", "alertText1", "alertText2",
-                  "alertStatus", "alertSize", "alertType", "experimentalMode",
-                  "personality"):
-      setattr(ss, field, getattr(msg.controlsState, field+"DEPRECATED"))
-    add_ops.append(m.as_reader())
-  return [], add_ops, []
+  # Deprecated fields removed in E2E 1.0 transition
+  # selfdriveState is now a separate message, no migration needed
+  return [], [], []
 
 
 @migration(inputs=["carState", "controlsState"])
