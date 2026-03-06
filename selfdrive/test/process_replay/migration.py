@@ -204,18 +204,9 @@ def migrate_controlsState(msgs):
 
 @migration(inputs=["carState", "controlsState"])
 def migrate_carState(msgs):
-  ops = []
-  last_cs = None
-  for index, msg in msgs:
-    if msg.which() == 'controlsState':
-      last_cs = msg
-    elif msg.which() == 'carState' and last_cs is not None:
-      if last_cs.controlsState.vCruiseDEPRECATED - msg.carState.vCruise > 0.1:
-        msg = msg.as_builder()
-        msg.carState.vCruise = last_cs.controlsState.vCruiseDEPRECATED
-        msg.carState.vCruiseCluster = last_cs.controlsState.vCruiseClusterDEPRECATED
-        ops.append((index, msg.as_reader()))
-  return ops, [], []
+  # Deprecated fields removed in E2E 1.0 transition
+  # No migration needed for new schema
+  return [], [], []
 
 
 @migration(inputs=["managerState"])

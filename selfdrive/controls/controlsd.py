@@ -88,6 +88,10 @@ class Controls:
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
 
+    # E2E shadow mode: read direct policy outputs and compute errors (Phase 1)
+    e2e_acceleration = model_v2.e2eAcceleration
+    e2e_target_curvature = model_v2.e2eTargetCurvature
+
     CC = car.CarControl.new_message()
     CC.enabled = self.sm['selfdriveState'].enabled
 
@@ -136,9 +140,15 @@ class Controls:
         cloudlog.error(f"actuators.{p} not finite {actuators.to_dict()}")
         setattr(actuators, p, 0.0)
 
-    return CC, lac_log
+    # E2E shadow mode: compute errors for logging (Phase 1)
+    # Longitudinal: E2E acceleration vs MPC target
+    e2e_accel_error = float(e2e_acceleration - long_plan.aTarget) if CC.longActive else 0.0
+    # Lateral: E2E target curvature vs MPC desired curvature
+    e2e_curv_error = float(e2e_target_curvature - self.desired_curvature) if CC.latActive else 0.0
 
-  def publish(self, CC, lac_log):
+    return CC, lac_log, e2e_accel_error, e2e_curv_error
+
+  def publish(self, CC, lac_log, e2e_accel_error, e2e_curv_error):
     CS = self.sm['carState']
 
     # Orientation and angle rates can be useful for carcontroller
@@ -193,6 +203,10 @@ class Controls:
     cs.forceDecel = bool((self.sm['driverMonitoringState'].awarenessStatus < 0.) or
                          (self.sm['selfdriveState'].state == State.softDisabling))
 
+    # E2E shadow mode error logging (Phase 1)
+    cs.e2eAccelerationError = e2e_accel_error
+    cs.e2eCurvatureError = e2e_curv_error
+
     lat_tuning = self.CP.lateralTuning.which()
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       cs.lateralControlState.angleState = lac_log
@@ -213,8 +227,8 @@ class Controls:
     rk = Ratekeeper(100, print_delay_threshold=None)
     while True:
       self.update()
-      CC, lac_log = self.state_control()
-      self.publish(CC, lac_log)
+      CC, lac_log, e2e_accel_error, e2e_curv_error = self.state_control()
+      self.publish(CC, lac_log, e2e_accel_error, e2e_curv_error)
       rk.monitor_time()
 
 

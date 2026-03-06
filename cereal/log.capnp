@@ -857,26 +857,26 @@ struct SelfdriveState {
 }
 
 struct ControlsState @0x97ff69c53601abf1 {
-  longitudinalPlanMonoTime @28 :UInt64;
-  lateralPlanMonoTime @50 :UInt64;
+  # active fields (sequential ordinals)
+  upAccelCmd @0 :Float32;
+  uiAccelCmd @1 :Float32;
+  ufAccelCmd @2 :Float32;
+  curvature @3 :Float32;  # path curvature from vehicle model
+  desiredCurvature @4 :Float32;  # lag adjusted curvatures used by lateral controllers
+  forceDecel @5 :Bool;
+  longitudinalPlanMonoTime @6 :UInt64;
+  lateralPlanMonoTime @7 :UInt64;
+  longControlState @8 :Car.CarControl.Actuators.LongControlState;
 
-  longControlState @30 :Car.CarControl.Actuators.LongControlState;
-  upAccelCmd @4 :Float32;
-  uiAccelCmd @5 :Float32;
-  ufAccelCmd @33 :Float32;
-  curvature @37 :Float32;  # path curvature from vehicle model
-  desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
-  forceDecel @51 :Bool;
+  # E2E shadow mode error logging (Phase 1)
+  e2eAccelerationError @9 :Float32;  # E2E acceleration - MPC target acceleration
+  e2eCurvatureError @10 :Float32;     # E2E target curvature - MPC desired curvature
 
   lateralControlState :union {
-    pidState @53 :LateralPIDState;
-    angleState @58 :LateralAngleState;
-    debugState @59 :LateralDebugState;
-    torqueState @60 :LateralTorqueState;
-
-    curvatureStateDEPRECATED @65 :LateralCurvatureState;
-    lqrStateDEPRECATED @55 :LateralLQRState;
-    indiStateDEPRECATED @52 :LateralINDIState;
+    pidState @11 :LateralPIDState;
+    angleState @12 :LateralAngleState;
+    debugState @13 :LateralDebugState;
+    torqueState @14 :LateralTorqueState;
   }
 
   struct LateralINDIState {
@@ -960,59 +960,6 @@ struct ControlsState @0x97ff69c53601abf1 {
     output @2 :Float32;
     saturated @3 :Bool;
   }
-
-  # deprecated
-  vEgoDEPRECATED @0 :Float32;
-  vEgoRawDEPRECATED @32 :Float32;
-  aEgoDEPRECATED @1 :Float32;
-  canMonoTimeDEPRECATED @16 :UInt64;
-  radarStateMonoTimeDEPRECATED @17 :UInt64;
-  mdMonoTimeDEPRECATED @18 :UInt64;
-  yActualDEPRECATED @6 :Float32;
-  yDesDEPRECATED @7 :Float32;
-  upSteerDEPRECATED @8 :Float32;
-  uiSteerDEPRECATED @9 :Float32;
-  ufSteerDEPRECATED @34 :Float32;
-  aTargetMinDEPRECATED @10 :Float32;
-  aTargetMaxDEPRECATED @11 :Float32;
-  rearViewCamDEPRECATED @23 :Bool;
-  driverMonitoringOnDEPRECATED @43 :Bool;
-  hudLeadDEPRECATED @14 :Int32;
-  alertSoundDEPRECATED @45 :Text;
-  angleModelBiasDEPRECATED @27 :Float32;
-  gpsPlannerActiveDEPRECATED @40 :Bool;
-  decelForTurnDEPRECATED @47 :Bool;
-  decelForModelDEPRECATED @54 :Bool;
-  awarenessStatusDEPRECATED @26 :Float32;
-  angleSteersDEPRECATED @13 :Float32;
-  vCurvatureDEPRECATED @46 :Float32;
-  mapValidDEPRECATED @49 :Bool;
-  jerkFactorDEPRECATED @12 :Float32;
-  steerOverrideDEPRECATED @20 :Bool;
-  steeringAngleDesiredDegDEPRECATED @29 :Float32;
-  canMonoTimesDEPRECATED @21 :List(UInt64);
-  desiredCurvatureRateDEPRECATED @62 :Float32;
-  canErrorCounterDEPRECATED @57 :UInt32;
-  vPidDEPRECATED @2 :Float32;
-  alertBlinkingRateDEPRECATED @42 :Float32;
-  alertText1DEPRECATED @24 :Text;
-  alertText2DEPRECATED @25 :Text;
-  alertStatusDEPRECATED @38 :SelfdriveState.AlertStatus;
-  alertSizeDEPRECATED @39 :SelfdriveState.AlertSize;
-  alertTypeDEPRECATED @44 :Text;
-  alertSound2DEPRECATED @56 :Car.CarControl.HUDControl.AudibleAlert;
-  engageableDEPRECATED @41 :Bool;  # can OP be engaged?
-  stateDEPRECATED @31 :SelfdriveState.OpenpilotState;
-  enabledDEPRECATED @19 :Bool;
-  activeDEPRECATED @36 :Bool;
-  experimentalModeDEPRECATED @64 :Bool;
-  personalityDEPRECATED @66 :LongitudinalPersonality;
-  vCruiseDEPRECATED @22 :Float32;  # actual set speed
-  vCruiseClusterDEPRECATED @63 :Float32;  # set speed to display in the UI
-  startMonoTimeDEPRECATED @48 :UInt64;
-  cumLagMsDEPRECATED @15 :Float32;
-  aTargetDEPRECATED @35 :Float32;
-  vTargetLeadDEPRECATED @3 :Float32;
 }
 
 struct DrivingModelData {
@@ -1097,6 +1044,10 @@ struct ModelDataV2 {
 
   # multi-hypothesis policy output (Phase 1 E2E 1.0)
   policy @27 :List(PolicyHypothesis);
+
+  # direct E2E policy outputs for Full E2E architecture (Phase 1)
+  e2eAcceleration @28 :Float32;
+  e2eTargetCurvature @29 :Float32;
 
   gpuExecutionTimeDEPRECATED @17 :Float32;
   navEnabledDEPRECATED @22 :Bool;

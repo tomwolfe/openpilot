@@ -95,6 +95,10 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   # action
   modelV2.action = action
 
+  # direct E2E policy outputs (Phase 1 - Shadow Mode: mirror action for logging)
+  modelV2.e2eAcceleration = action.desiredAcceleration
+  modelV2.e2eTargetCurvature = action.desiredCurvature
+
   # times at X_IDXS of edges and lines aren't used
   LINE_T_IDXS: list[float] = []
 
