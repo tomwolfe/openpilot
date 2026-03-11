@@ -13,7 +13,9 @@ def desired_follow_distance(v_ego, v_lead, t_follow=None):
     t_follow = get_T_FOLLOW()
   return get_safe_obstacle_distance(v_ego, t_follow) - get_stopped_equivalence_factor(v_lead)
 
-def run_following_distance_simulation(v_lead, t_end=100.0, e2e=False, personality=0):
+def run_following_distance_simulation(v_lead, t_end=100.0, e2e=True, personality=0):
+  # E2E is now mandatory for following distance simulations
+  assert e2e is True
   man = Maneuver(
     '',
     duration=t_end,
@@ -22,7 +24,7 @@ def run_following_distance_simulation(v_lead, t_end=100.0, e2e=False, personalit
     initial_distance_lead=100,
     speed_lead_values=[v_lead],
     breakpoints=[0.],
-    e2e=e2e,
+    e2e=True,
     personality=personality,
   )
   valid, output = man.evaluate()
@@ -31,7 +33,7 @@ def run_following_distance_simulation(v_lead, t_end=100.0, e2e=False, personalit
 
 
 @parameterized_class(("e2e", "personality", "speed"), itertools.product(
-                      [True, False], # e2e
+                      [True], # e2e
                       [log.LongitudinalPersonality.relaxed, # personality
                        log.LongitudinalPersonality.standard,
                        log.LongitudinalPersonality.aggressive],

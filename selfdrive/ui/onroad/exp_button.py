@@ -13,11 +13,6 @@ class ExpButton(Widget):
     self._experimental_mode: bool = False
     self._engageable: bool = False
 
-    # State hold mechanism
-    self._hold_duration = 2.0  # seconds
-    self._held_mode: bool | None = None
-    self._hold_end_time: float | None = None
-
     self._white_color: rl.Color = rl.Color(255, 255, 255, 255)
     self._black_bg: rl.Color = rl.Color(0, 0, 0, 166)
     self._txt_wheel: rl.Texture = gui_app.texture('icons/chffr_wheel.png', icon_size, icon_size)
@@ -33,14 +28,8 @@ class ExpButton(Widget):
     self._engageable = selfdrive_state.engageable or selfdrive_state.enabled
 
   def _handle_mouse_release(self, _):
+    # E2E Phase 1: Toggle is disabled as Experimental Mode is now the default
     super()._handle_mouse_release(_)
-    if self._is_toggle_allowed():
-      new_mode = not self._experimental_mode
-      self._params.put_bool("ExperimentalMode", new_mode)
-
-      # Hold new state temporarily
-      self._held_mode = new_mode
-      self._hold_end_time = time.monotonic() + self._hold_duration
 
   def _render(self, rect: rl.Rectangle) -> None:
     center_x = int(self._rect.x + self._rect.width // 2)
@@ -48,23 +37,9 @@ class ExpButton(Widget):
 
     self._white_color.a = 180 if self.is_pressed or not self._engageable else 255
 
-    texture = self._txt_exp if self._held_or_actual_mode() else self._txt_wheel
+    texture = self._txt_exp if self._experimental_mode else self._txt_wheel
     rl.draw_circle(center_x, center_y, self._rect.width / 2, self._black_bg)
     rl.draw_texture(texture, center_x - texture.width // 2, center_y - texture.height // 2, self._white_color)
 
   def _held_or_actual_mode(self):
-    now = time.monotonic()
-    if self._hold_end_time and now < self._hold_end_time:
-      return self._held_mode
-
-    if self._hold_end_time and now >= self._hold_end_time:
-      self._hold_end_time = self._held_mode = None
-
     return self._experimental_mode
-
-  def _is_toggle_allowed(self):
-    if not self._params.get_bool("ExperimentalModeConfirmed"):
-      return False
-
-    # Mirror exp mode toggle using persistent car params
-    return ui_state.has_longitudinal_control
