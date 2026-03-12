@@ -35,7 +35,7 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
 from openpilot.common.transformations.model import get_warp_matrix
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
-from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value, get_curvature_from_plan
+from openpilot.selfdrive.controls.lib.drive_helpers import smooth_value
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import read_file_chunked
@@ -64,37 +64,16 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
                           lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
     """
     Extract action predictions from model outputs.
-    
-    E2E Phase 2: Direct actuator predictions (steer_torque_pred, gas_pred, brake_pred)
-    are extracted and published. These are used directly by E2E controllers.
-    
-    Classical mode: Trajectory predictions (desiredCurvature, desiredAcceleration)
-    are extracted with smoothing for comfort. These are used by PID controllers.
-    
-    Both outputs are always published - the choice of which to use is made by controlsd.py
+
+    E2E: Direct actuator predictions (steer_torque_pred, gas_pred, brake_pred)
+    are the primary control signals used by the E2E controllers.
+
+    Trajectory predictions (desiredCurvature, desiredAcceleration) are still
+    published for logging/debugging but not used for control.
     """
     plan = model_output['plan'][0]
-    
-    # Classical: Extract trajectory-based targets with smoothing for comfort
-    # E2E: These are still published for logging/debugging, but not used for control
-    desired_accel, should_stop = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
-                                                     plan[:,Plan.ACCELERATION][:,0],
-                                                     ModelConstants.T_IDXS,
-                                                     action_t=long_action_t)
-    desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
 
-    desired_curvature = get_curvature_from_plan(plan[:,Plan.T_FROM_CURRENT_EULER][:,2],
-                                                plan[:,Plan.ORIENTATION_RATE][:,2],
-                                                ModelConstants.T_IDXS,
-                                                v_ego,
-                                                lat_action_t)
-    if v_ego > MIN_LAT_CONTROL_SPEED:
-      desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
-    else:
-      desired_curvature = prev_action.desiredCurvature
-
-    # E2E Phase 2: Extract direct actuator predictions
-    # These are the primary control signals for E2E mode
+    # E2E: Extract direct actuator predictions
     # Model outputs are in range [-1, 1] for torque, [0, 1] for pedals
     # E2E controllers apply their own minimal filtering
     steer_torque_pred = float(model_output.get('steer_torque_pred', [[0.0]])[0, 0])
@@ -104,9 +83,29 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     crash_prob = float(model_output.get('crash_prob', [[0.0]])[0, 0])
     ttc_pred = float(model_output.get('ttc_pred', [[0.0]])[0, 0])
 
+    # Trajectory-based targets for logging/debugging (not used for control)
+    # Extract from plan with smoothing
+    if len(ModelConstants.T_IDXS) == len(plan[:,Plan.VELOCITY][:,0]):
+      v_now = plan[:,Plan.VELOCITY][:,0][0]
+      a_now = plan[:,Plan.ACCELERATION][:,0][0]
+      v_target = np.interp(long_action_t, ModelConstants.T_IDXS, plan[:,Plan.VELOCITY][:,0])
+      desired_accel = 2 * (v_target - v_now) / (long_action_t) - a_now
+    else:
+      desired_accel = 0.0
+    desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
+
+    # Extract curvature from plan for logging
+    if v_ego > MIN_LAT_CONTROL_SPEED:
+      psi_target = np.interp(lat_action_t, ModelConstants.T_IDXS, plan[:,Plan.T_FROM_CURRENT_EULER][:,2])
+      psi_rate = plan[:,Plan.ORIENTATION_RATE][:,2][0]
+      desired_curvature = 2*psi_target / (v_ego * lat_action_t) - psi_rate / v_ego
+      desired_curvature = smooth_value(desired_curvature, prev_action.desiredCurvature, LAT_SMOOTH_SECONDS)
+    else:
+      desired_curvature = prev_action.desiredCurvature
+
     return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                   desiredAcceleration=float(desired_accel),
-                                  shouldStop=bool(should_stop),
+                                  shouldStop=False,
                                   steerTorquePred=steer_torque_pred,
                                   steerAnglePred=steer_angle_pred,
                                   gasPred=gas_pred,

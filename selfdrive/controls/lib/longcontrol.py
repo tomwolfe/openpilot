@@ -1,64 +1,116 @@
+#!/usr/bin/env python3
+"""
+Direct Longitudinal Control (E2E)
+
+This controller directly applies the model's predicted gas/brake commands to the actuators.
+The neural network outputs gas_pred and brake_pred which are mapped directly
+to CC.actuators.accel after simple low-pass filtering.
+
+E2E Architecture:
+- No state machine (model learns when to stop/starting from data)
+- No heuristic smoothing (model outputs are already smooth from training)
+- No artificial limits (Panda safety layer enforces absolute bounds)
+- Direct brake passthrough at all speeds including standstill
+"""
 import numpy as np
 from cereal import car
 from openpilot.common.realtime import DT_CTRL
-from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
-from openpilot.common.pid import PIDController
-from openpilot.selfdrive.modeld.constants import ModelConstants
-
-CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
+from openpilot.common.filter_simple import FirstOrderFilter
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
 
 class LongControl:
   """
-  Classical longitudinal controller using PID control.
-  
-  E2E Phase 2: This classical controller is deprecated in favor of LongControlE2E.
-  The state machine has been simplified - LongCtrlState.pid handles the entire
-  driving envelope including stopping. The model learns appropriate braking
-  behavior for stops implicitly from human driving data.
-  
-  Removed states:
-  - LongCtrlState.stopping: Model decides when to stop via brake_pred output
-  - LongCtrlState.starting: Handled by normal PID control
+  Direct actuation longitudinal controller.
+
+  Instead of calculating tracking error against a_target and using a PID controller,
+  this directly applies the model's gas/brake predictions with minimal filtering.
+
+  The neural network has learned:
+  - Vehicle dynamics (mass, drag, braking response) implicitly from data
+  - Appropriate stopping behavior from human driving
+  - Smooth gas/brake transitions
   """
+
   def __init__(self, CP):
     self.CP = CP
+
+    # Low-pass filter for smoothing actuator commands
+    # Model outputs are already smooth from training on human driving data.
+    # Minimal filtering preserves model's intended trajectory while removing high-frequency noise.
+    LONG_FILTER_SECONDS = 0.08
+    self.gas_filter = FirstOrderFilter(0.0, LONG_FILTER_SECONDS, DT_CTRL)
+    self.brake_filter = FirstOrderFilter(0.0, LONG_FILTER_SECONDS, DT_CTRL)
+
     self.long_control_state = LongCtrlState.off
-    self.pid = PIDController((CP.longitudinalTuning.kpBP, CP.longitudinalTuning.kpV),
-                             (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
-                             rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
 
-  def reset(self):
-    self.pid.reset()
+    # AEB override state
+    self.aeb_active = False
 
-  def update(self, active, CS, a_target, should_stop, accel_limits):
+  def reset(self):
+    """Reset controller state and filters."""
+    self.gas_filter.x = 0.0
+    self.brake_filter.x = 0.0
+    self.last_output_accel = 0.0
+    self.long_control_state = LongCtrlState.off
+    self.aeb_active = False
+
+  def update(self, active, CS, model_output, accel_limits, aeb_override=None):
     """
-    Update longitudinal control using PID.
-    
-    E2E Phase 2: should_stop parameter is ignored - the model's brake_pred
-    output determines stopping behavior. This maintains backward compatibility
-    with classical mode while removing heuristic stopping logic.
+    Update longitudinal control using direct E2E actuation.
+
+    The model learns appropriate holding brake pressure for stops from human data.
+    No artificial smoothing or override at low speeds.
+
+    Args:
+      active: Whether longitudinal control is active
+      CS: CarState message
+      model_output: Dict containing model predictions including 'gas_pred' and 'brake_pred'
+      accel_limits: [min_accel, max_accel] limits from vehicle
+      aeb_override: Optional AEB acceleration override (when model detects imminent collision)
+
+    Returns:
+      output_accel: Acceleration command to send to actuators
     """
-    self.pid.neg_limit = accel_limits[0]
-    self.pid.pos_limit = accel_limits[1]
+    # Extract model predictions
+    # Model outputs are in range [0, 1] representing pedal position
+    gas_pred = model_output.get('gas_pred', 0.0)
+    brake_pred = model_output.get('brake_pred', 0.0)
+
+    # Apply low-pass filtering for smooth actuation
+    filtered_gas = self.gas_filter.update(gas_pred)
+    filtered_brake = self.brake_filter.update(brake_pred)
+
+    # Convert pedal positions to acceleration
+    # Gas: 0-1 maps to [0, max_accel]
+    # Brake: 0-1 maps to [min_accel, 0]
+    gas_accel = filtered_gas * accel_limits[1]
+    brake_accel = filtered_brake * accel_limits[0]
+
+    # Combine gas and brake (they should be mutually exclusive in a well-trained model)
+    output_accel = gas_accel + brake_accel
+
+    # AEB override: if model predicts imminent collision, override with maximum braking
+    if aeb_override is not None and aeb_override < output_accel:
+      output_accel = aeb_override
+      self.aeb_active = True
+    else:
+      self.aeb_active = False
+
+    # Clip to vehicle limits (Panda safety layer enforces absolute bounds)
+    self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
 
     if not active:
       self.reset()
-      output_accel = 0.
+      self.last_output_accel = 0.0
       self.long_control_state = LongCtrlState.off
     else:
-      # E2E Phase 2: Directly follow acceleration targets from the model/MPC.
-      # The PID controller handles the tracking error for the entire driving envelope.
-      # should_stop is ignored - model learns appropriate stopping behavior.
-      error = a_target - CS.aEgo
-      output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
-      
-      # E2E Phase 2: Simplified state machine - only pid or off
-      # Removed: LongCtrlState.stopping, LongCtrlState.starting
       self.long_control_state = LongCtrlState.pid
 
-    self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     return self.last_output_accel
+
+  def get_aeb_status(self):
+    """Returns whether AEB is currently active."""
+    return self.aeb_active

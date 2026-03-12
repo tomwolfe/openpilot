@@ -488,26 +488,15 @@ struct CarParams {
   tireStiffnessFront @23 :Float32;   # [N/rad] front tire coeff of stiff
   tireStiffnessRear @24 :Float32;    # [N/rad] rear tire coeff of stiff
 
-  longitudinalTuning @25 :LongitudinalPIDTuning;
-  lateralParams @48 :LateralParams;
-  lateralTuning :union {
-    pid @26 :LateralPIDTuning;
-    indiDEPRECATED @27 :LateralINDITuning;
-    lqrDEPRECATED @40 :LateralLQRTuning;
-    torque @67 :LateralTorqueTuning;
-  }
+  longitudinalTuning @25 :LongitudinalTuning;
+  lateralTuning @26 :LateralTuning;
 
   steerLimitAlert @28 :Bool;
   steerLimitTimer @47 :Float32;  # time before steerLimitAlert is issued
 
-  vEgoStopping @29 :Float32; # Speed at which the car goes into stopping state
-  vEgoStarting @59 :Float32; # Speed at which the car goes into starting state
   steerControlType @34 :SteerControlType;
   radarUnavailable @35 :Bool; # True when radar objects aren't visible on CAN or aren't parsed out
   stopAccel @60 :Float32; # Required acceleration to keep vehicle stationary
-  stoppingDecelRate @52 :Float32; # m/s^2/s while trying to stop
-  startAccel @32 :Float32; # Required acceleration to get car moving
-  startingState @70 :Bool; # Does this car make use of special starting state
 
   steerActuatorDelay @36 :Float32; # Steering wheel actuator delay in seconds
   longitudinalActuatorDelay @58 :Float32; # Gas/Brake actuator delay in seconds
@@ -534,69 +523,17 @@ struct CarParams {
     safetyParam2DEPRECATED @2 :UInt32;
   }
 
-  struct LateralParams {
-    torqueBP @0 :List(Int32);
-    torqueV @1 :List(Int32);
+  struct LateralTuning {
+    # E2E: Lateral tuning parameters are learned by the neural network.
+    # This struct is kept for future use but currently unused.
+    friction @0 :Float32;  # Reserved for future use
+    steeringAngleDeadzoneDeg @1 :Float32;  # Reserved for future use
   }
 
-  struct LateralPIDTuning {
-    kpBP @0 :List(Float32);
-    kpV @1 :List(Float32);
-    kiBP @2 :List(Float32);
-    kiV @3 :List(Float32);
-    kf @4 :Float32;
-  }
-
-  struct LateralTorqueTuning {
-    friction @3 :Float32;
-    steeringAngleDeadzoneDeg @5 :Float32;
-    latAccelFactor @6 :Float32;
-    latAccelOffset @7 :Float32;
-    useSteeringAngleDEPRECATED @0 :Bool;
-    kpDEPRECATED @1 :Float32;
-    kiDEPRECATED @2 :Float32;
-    kfDEPRECATED @4 :Float32;
-    kdDEPRECATED @8 : Float32;
-  }
-
-  struct LongitudinalPIDTuning {
-    kpBP @0 :List(Float32);
-    kpV @1 :List(Float32);
-    kiBP @2 :List(Float32);
-    kiV @3 :List(Float32);
-    kfDEPRECATED @6 :Float32;
-    deadzoneBPDEPRECATED @4 :List(Float32);
-    deadzoneVDEPRECATED @5 :List(Float32);
-  }
-
-  struct LateralINDITuning {
-    outerLoopGainBP @4 :List(Float32);
-    outerLoopGainV @5 :List(Float32);
-    innerLoopGainBP @6 :List(Float32);
-    innerLoopGainV @7 :List(Float32);
-    timeConstantBP @8 :List(Float32);
-    timeConstantV @9 :List(Float32);
-    actuatorEffectivenessBP @10 :List(Float32);
-    actuatorEffectivenessV @11 :List(Float32);
-
-    outerLoopGainDEPRECATED @0 :Float32;
-    innerLoopGainDEPRECATED @1 :Float32;
-    timeConstantDEPRECATED @2 :Float32;
-    actuatorEffectivenessDEPRECATED @3 :Float32;
-  }
-
-  struct LateralLQRTuning {
-    scale @0 :Float32;
-    ki @1 :Float32;
-    dcGain @2 :Float32;
-
-    # State space system
-    a @3 :List(Float32);
-    b @4 :List(Float32);
-    c @5 :List(Float32);
-
-    k @6 :List(Float32);  # LQR gain
-    l @7 :List(Float32);  # Kalman gain
+  struct LongitudinalTuning {
+    # E2E: Longitudinal tuning parameters are learned by the neural network.
+    # This struct is kept for future use but currently unused.
+    accelDelay @0 :Float32;  # Reserved for future use
   }
 
   enum SafetyModel {
