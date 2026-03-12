@@ -21,6 +21,12 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
+from openpilot.selfdrive.modeld.constants import index_function
+
+# E2E Phase 1: MPC time indices (deprecated, kept for backward compatibility)
+LONG_MPC_N = 12
+LONG_MPC_MAX_T = 10.0
+T_IDXS_MPC = np.array([index_function(idx, max_val=LONG_MPC_MAX_T, max_idx=LONG_MPC_N) for idx in range(LONG_MPC_N + 1)])
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]

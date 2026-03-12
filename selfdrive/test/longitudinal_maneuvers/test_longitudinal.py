@@ -1,8 +1,11 @@
 import itertools
 from openpilot.common.parameterized import parameterized_class
 
-from openpilot.selfdrive.controls.lib.drive_helpers import STOP_DISTANCE
 from openpilot.selfdrive.test.longitudinal_maneuvers.maneuver import Maneuver
+
+
+# E2E Phase 1: STOP_DISTANCE constant (deprecated, kept for test compatibility)
+STOP_DISTANCE = 6.0
 
 
 # TODO: make new FCW tests

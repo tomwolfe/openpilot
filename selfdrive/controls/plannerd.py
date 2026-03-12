@@ -24,7 +24,11 @@ def extract_optimal_path(model_v2_msg):
     Tuple of (position_x, velocity_x, acceleration_x, probability, is_valid)
     where each array is interpolated to MPC timesteps, or None values if no valid policy
   """
-  from openpilot.selfdrive.controls.lib.drive_helpers import T_IDXS_MPC
+  # E2E Phase 1: MPC time indices for trajectory interpolation
+  # TODO: Migrate to direct E2E trajectory without MPC interpolation
+  LONG_MPC_N = 12
+  LONG_MPC_MAX_T = 10.0
+  T_IDXS_MPC = np.array([index_function(idx, max_val=LONG_MPC_MAX_T, max_idx=LONG_MPC_N) for idx in range(LONG_MPC_N + 1)])
 
   # Check if policy hypotheses are available
   if not model_v2_msg.policy or len(model_v2_msg.policy) == 0:

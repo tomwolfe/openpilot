@@ -30,7 +30,7 @@ from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
 warnings.warn(
   "long_mpc.py is deprecated. E2E Phase 1: Use direct E2E actuation instead. "
   "The MPC controller is no longer used in production. "
-  "Import T_IDXS from selfdrive.controls.lib.drive_helpers if needed for tests.",
+  "Tests should define T_IDXS_MPC locally if needed for legacy MPC tests.",
   DeprecationWarning,
   stacklevel=2
 )

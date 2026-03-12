@@ -27,7 +27,7 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 warnings.warn(
   "lat_mpc.py is deprecated. E2E Phase 1: Use direct E2E actuation instead. "
   "The MPC controller is no longer used in production. "
-  "Import LAT_MPC_N from selfdrive.controls.lib.drive_helpers if needed for tests.",
+  "Tests should define LAT_MPC_N locally if needed for legacy MPC tests.",
   DeprecationWarning,
   stacklevel=2
 )

@@ -14,7 +14,11 @@ import numpy as np
 import warnings
 
 from openpilot.selfdrive.controls.lib.lateral_mpc_lib.lat_mpc import LateralMpc
-from openpilot.selfdrive.controls.lib.drive_helpers import CAR_ROTATION_RADIUS, LAT_MPC_N
+
+
+# E2E Phase 1: Lateral MPC constants (deprecated, kept for test compatibility)
+LAT_MPC_N = 32
+CAR_ROTATION_RADIUS = 0.0  # meters, rotation center offset
 
 
 # Suppress deprecation warnings in this test file since we're explicitly testing deprecated code
