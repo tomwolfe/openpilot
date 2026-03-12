@@ -32,20 +32,28 @@ def smooth_value(val, prev_val, tau, dt=DT_MDL):
 # Panda safety layer enforces absolute physical limits.
 
 
-def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.05):
+def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL):
+  """
+  Extract acceleration target from model's velocity/acceleration plan.
+  
+  E2E Phase 2: Removed vEgoStopping heuristic - the model learns appropriate
+  stopping behavior implicitly from human driving data. The model should output
+  a_target = 0 (or necessary holding brake pressure) when stopped.
+  
+  Classical controllers used this for state machine logic, but E2E controllers
+  bypass this entirely by using direct actuator predictions (gas_pred, brake_pred).
+  """
   if len(speeds) == len(t_idxs):
     v_now = speeds[0]
     a_now = accels[0]
     v_target = np.interp(action_t, t_idxs, speeds)
     a_target = 2 * (v_target - v_now) / (action_t) - a_now
-    v_target_1sec = np.interp(action_t + 1.0, t_idxs, speeds)
   else:
-    v_target = 0.0
-    v_target_1sec = 0.0
     a_target = 0.0
-  should_stop = (v_target < vEgoStopping and
-                 v_target_1sec < vEgoStopping)
-  return a_target, should_stop
+  
+  # E2E Phase 2: Return None for should_stop - model decides when to stop
+  # Classical mode compatibility: return False to maintain legacy behavior
+  return a_target, False
 
 def curv_from_psis(psi_target, psi_rate, vego, action_t):
   vego = np.clip(vego, MIN_SPEED, np.inf)

@@ -11,6 +11,18 @@ LongCtrlState = car.CarControl.Actuators.LongControlState
 
 
 class LongControl:
+  """
+  Classical longitudinal controller using PID control.
+  
+  E2E Phase 2: This classical controller is deprecated in favor of LongControlE2E.
+  The state machine has been simplified - LongCtrlState.pid handles the entire
+  driving envelope including stopping. The model learns appropriate braking
+  behavior for stops implicitly from human driving data.
+  
+  Removed states:
+  - LongCtrlState.stopping: Model decides when to stop via brake_pred output
+  - LongCtrlState.starting: Handled by normal PID control
+  """
   def __init__(self, CP):
     self.CP = CP
     self.long_control_state = LongCtrlState.off
@@ -23,8 +35,13 @@ class LongControl:
     self.pid.reset()
 
   def update(self, active, CS, a_target, should_stop, accel_limits):
-    """Update longitudinal control. This refactor deprecates the rigid state machine
-    and follows negative/positive acceleration targets directly from the E2E model plan."""
+    """
+    Update longitudinal control using PID.
+    
+    E2E Phase 2: should_stop parameter is ignored - the model's brake_pred
+    output determines stopping behavior. This maintains backward compatibility
+    with classical mode while removing heuristic stopping logic.
+    """
     self.pid.neg_limit = accel_limits[0]
     self.pid.pos_limit = accel_limits[1]
 
@@ -33,10 +50,14 @@ class LongControl:
       output_accel = 0.
       self.long_control_state = LongCtrlState.off
     else:
-      # E2E Phase 1: Directly follow acceleration targets from the model/MPC.
-      # The PID controller handles the tracking error for both following and stopping.
+      # E2E Phase 2: Directly follow acceleration targets from the model/MPC.
+      # The PID controller handles the tracking error for the entire driving envelope.
+      # should_stop is ignored - model learns appropriate stopping behavior.
       error = a_target - CS.aEgo
       output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target)
+      
+      # E2E Phase 2: Simplified state machine - only pid or off
+      # Removed: LongCtrlState.stopping, LongCtrlState.starting
       self.long_control_state = LongCtrlState.pid
 
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
