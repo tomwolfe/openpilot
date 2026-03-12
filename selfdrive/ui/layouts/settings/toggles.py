@@ -3,10 +3,7 @@ from openpilot.common.params import Params, UnknownKeyName
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.list_view import multiple_button_item, toggle_item
 from openpilot.system.ui.widgets.scroller_tici import Scroller
-from openpilot.system.ui.widgets.confirm_dialog import ConfirmDialog
-from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.multilang import tr, tr_noop
-from openpilot.system.ui.widgets import DialogResult
 from openpilot.selfdrive.ui.ui_state import ui_state
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
@@ -150,7 +147,7 @@ class TogglesLayout(Widget):
 
     if ui_state.CP is not None:
       self._long_personality_setting.action_item.set_enabled(ui_state.has_longitudinal_control)
-    
+
     # refresh toggles from params to mirror external changes
     for param in self._toggle_defs:
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
