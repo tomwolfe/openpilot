@@ -3,7 +3,7 @@ import requests
 from http import HTTPMethod
 
 class GithubUtils:
-  def __init__(self, api_token, data_token, owner='commaai', api_repo='openpilot', data_repo='ci-artifacts'):
+  def __init__(self, api_token, data_token, owner='tomwolfe', api_repo='openpilot', data_repo='ci-artifacts'):
     self.OWNER = owner
     self.API_REPO = api_repo
     self.DATA_REPO = data_repo
