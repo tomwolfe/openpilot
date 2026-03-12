@@ -3,7 +3,6 @@ from cereal import car
 from openpilot.common.params import Params
 from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 from openpilot.selfdrive.modeld.constants import ModelConstants
 import cereal.messaging as messaging
@@ -25,7 +24,7 @@ def extract_optimal_path(model_v2_msg):
     Tuple of (position_x, velocity_x, acceleration_x, probability, is_valid)
     where each array is interpolated to MPC timesteps, or None values if no valid policy
   """
-  from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
+  from openpilot.selfdrive.controls.lib.drive_helpers import T_IDXS_MPC
 
   # Check if policy hypotheses are available
   if not model_v2_msg.policy or len(model_v2_msg.policy) == 0:
@@ -70,7 +69,6 @@ def main():
   CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("plannerd got CarParams: %s", CP.brand)
 
-  ldw = LaneDepartureWarning()
   longitudinal_planner = LongitudinalPlanner(CP)
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance'])
   sm = messaging.SubMaster(['carControl', 'carState', 'controlsState', 'liveParameters', 'radarState', 'modelV2', 'selfdriveState'],
@@ -87,12 +85,14 @@ def main():
                                    e2e_prob=e2e_prob, e2e_valid=e2e_valid)
       longitudinal_planner.publish(sm, pm)
 
-      # LDW operates on model's spatial outputs - preserved from original implementation
-      ldw.update(sm.frame, sm['modelV2'], sm['carState'], sm['carControl'])
+      # E2E Phase 4: Lane departure warning from model (not heuristic)
+      # Model outputs single ldwWarning flag - use for both left and right
+      # Future: model can be enhanced to output separate left/right warnings
+      ldw_warning = sm['modelV2'].action.ldwWarning
       msg = messaging.new_message('driverAssistance')
       msg.valid = sm.all_checks(['carState', 'carControl', 'modelV2', 'liveParameters'])
-      msg.driverAssistance.leftLaneDeparture = ldw.left
-      msg.driverAssistance.rightLaneDeparture = ldw.right
+      msg.driverAssistance.leftLaneDeparture = ldw_warning
+      msg.driverAssistance.rightLaneDeparture = ldw_warning
       pm.send('driverAssistance', msg)
 
 

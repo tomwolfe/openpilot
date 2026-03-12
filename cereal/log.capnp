@@ -1215,6 +1215,7 @@ struct ModelDataV2 {
     crashProb @7 :Float32;          # Crash probability for AEB [0, 1]
     ttcPred @8 :Float32;            # Time to collision prediction in seconds
     aebImminent @9 :Bool;           # E2E Phase 3: Explicit AEB trigger flag
+    ldwWarning @10 :Bool;           # E2E Phase 4: Lane departure warning from model
   }
 
   # Policy hypothesis for multi-path trajectory prediction (Phase 1 E2E 1.0)

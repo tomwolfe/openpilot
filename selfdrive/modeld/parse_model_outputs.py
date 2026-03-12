@@ -121,7 +121,7 @@ class Parser:
   def parse_e2e_actuator_outputs(self, outs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """
     E2E Phase 2: Parse direct actuator outputs from the model.
-    
+
     These outputs represent the model's direct predictions for:
     - steer_torque_pred: Steering torque [-1, 1]
     - steer_angle_pred: Steering angle in radians
@@ -129,26 +129,30 @@ class Parser:
     - brake_pred: Brake pedal position [0, 1]
     - crash_prob: Crash probability for AEB [0, 1]
     - ttc: Time to collision in seconds
+    
+    E2E Phase 4: Also parses ldw_warning for lane departure detection.
     """
-    # Apply sigmoid to bound outputs to [0, 1] for gas, brake, crash_prob
+    # Apply sigmoid to bound outputs to [0, 1] for gas, brake, crash_prob, ldw_warning
     if 'gas' in outs:
       outs['gas_pred'] = self.parse_binary_crossentropy('gas', outs) or outs['gas']
     if 'brake' in outs:
       outs['brake_pred'] = self.parse_binary_crossentropy('brake', outs) or outs['brake']
     if 'crash_prob' in outs:
       outs['crash_prob'] = self.parse_binary_crossentropy('crash_prob', outs) or outs['crash_prob']
-    
+    if 'ldw_warning' in outs:
+      outs['ldw_warning'] = self.parse_binary_crossentropy('ldw_warning', outs) or outs['ldw_warning']
+
     # Tanh for bounded outputs [-1, 1] for steer_torque
     if 'steer_torque' in outs:
       outs['steer_torque_pred'] = np.tanh(outs['steer_torque'])
-    
+
     # Linear outputs (no activation): steer_angle, ttc
     # These are used directly
     if 'steer_angle' in outs:
       outs['steer_angle_pred'] = outs['steer_angle']
     if 'ttc' in outs:
       outs['ttc_pred'] = outs['ttc']
-    
+
     return outs
 
   def parse_outputs(self, outs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:

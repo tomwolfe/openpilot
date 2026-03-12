@@ -1,8 +1,24 @@
+"""
+DEPRECATED: Tests for Lateral MPC Controller
+
+E2E Phase 1: The Lateral MPC controller is deprecated in favor of direct E2E actuation.
+These tests are preserved for:
+- Regression testing during the E2E transition
+- Historical reference
+- Potential future research comparisons
+
+New tests should focus on validating E2E model behavior against human driving data.
+"""
 import pytest
 import numpy as np
+import warnings
+
 from openpilot.selfdrive.controls.lib.lateral_mpc_lib.lat_mpc import LateralMpc
-from openpilot.selfdrive.controls.lib.drive_helpers import CAR_ROTATION_RADIUS
-from openpilot.selfdrive.controls.lib.lateral_mpc_lib.lat_mpc import N as LAT_MPC_N
+from openpilot.selfdrive.controls.lib.drive_helpers import CAR_ROTATION_RADIUS, LAT_MPC_N
+
+
+# Suppress deprecation warnings in this test file since we're explicitly testing deprecated code
+warnings.filterwarnings('ignore', category=DeprecationWarning, message='.*lat_mpc.py.*')
 
 
 def run_mpc(lat_mpc=None, v_ref=30., x_init=0., y_init=0., psi_init=0., curvature_init=0.,

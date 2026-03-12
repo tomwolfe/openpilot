@@ -97,31 +97,21 @@ def get_vehicle_embedding_shape() -> tuple:
 def integrate_with_modeld():
   """
   Integration guide for adding vehicle conditioning to modeld.
-  
+
   This function documents the steps needed to integrate vehicle
   conditioning into the modeld pipeline.
+
+  Status: ✅ COMPLETE (E2E Phase 2)
   
-  Steps:
-  1. In modeld.py, create VehicleConditioning instance:
-     ```
-     from openpilot.selfdrive.modeld.vehicle_conditioning import VehicleConditioning
-     VC = VehicleConditioning(CP)
-     ```
-  
-  2. Add vehicle_embedding to model inputs:
-     ```
-     inputs['vehicle_embedding'] = VC.get_embedding()
-     ```
-  
-  3. Update model input shapes in ModelState:
-     ```
-     self.policy_input_shapes['vehicle_embedding'] = (1, 4)
-     ```
-  
-  4. Modify model architecture to accept vehicle embedding:
-     - Concatenate with feature buffer before final layers
-     - Or use as conditioning input to FiLM layers
-  
-  5. Train model with vehicle parameters as input
+  Implementation:
+  1. ✅ VehicleConditioning instance created in modeld.py
+  2. ✅ vehicle_embedding added to model inputs
+  3. ✅ Model input shapes updated in ModelState (with fallback for untrained models)
+  4. ⏳ Model architecture update (requires retraining with vehicle_embedding input)
+  5. ⏳ Model training (pending training pipeline update)
+
+  Notes:
+  - The infrastructure is complete and will accept zero embeddings until model is retrained
+  - Once model is trained with vehicle_embedding, it will automatically adapt to different vehicles
   """
   pass

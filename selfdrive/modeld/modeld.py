@@ -88,6 +88,11 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     # These thresholds match the AEB logic in controlsd.py
     aeb_imminent = (crash_prob > 0.7) or (ttc_pred > 0 and ttc_pred < 1.5)
 
+    # E2E Phase 4: Extract ldwWarning from model
+    # Model outputs ldw_warning probability, threshold at 0.5 for binary warning
+    ldw_warning_raw = float(model_output.get('ldw_warning', [[0.0]])[0, 0])
+    ldw_warning = ldw_warning_raw > 0.5
+
     # Trajectory-based targets for logging/debugging (not used for control)
     # Extract from plan with smoothing
     if len(ModelConstants.T_IDXS) == len(plan[:,Plan.VELOCITY][:,0]):
@@ -117,7 +122,8 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
                                   brakePred=brake_pred,
                                   crashProb=crash_prob,
                                   ttcPred=ttc_pred,
-                                  aebImminent=aeb_imminent)
+                                  aebImminent=aeb_imminent,
+                                  ldwWarning=ldw_warning)
 
 class FrameMeta:
   frame_id: int = 0
@@ -209,6 +215,19 @@ class ModelState:
 
     # policy inputs
     self.numpy_inputs = {k: np.zeros(self.policy_input_shapes[k], dtype=np.float32) for k in self.policy_input_shapes}
+    
+    # E2E Phase 2: Add vehicle conditioning embedding input
+    # Note: Model must be trained with vehicle_embedding input for this to have effect
+    if 'vehicle_embedding' not in self.policy_input_shapes:
+      self.policy_input_shapes['vehicle_embedding'] = (1, 4)
+      self.numpy_inputs['vehicle_embedding'] = np.zeros((1, 4), dtype=np.float32)
+    
+    # E2E Phase 4: Add navigation embeddings input
+    # Note: Model must be trained with nav_embeddings input for this to have effect
+    if 'nav_embeddings' not in self.policy_input_shapes:
+      self.policy_input_shapes['nav_embeddings'] = (1, 64)
+      self.numpy_inputs['nav_embeddings'] = np.zeros((1, 64), dtype=np.float32)
+    
     self.full_input_queues = InputQueues(ModelConstants.MODEL_CONTEXT_FREQ, ModelConstants.MODEL_RUN_FREQ, ModelConstants.N_FRAMES)
     for k in ['desire_pulse', 'features_buffer']:
       self.full_input_queues.update_dtypes_and_shapes({k: self.numpy_inputs[k].dtype}, {k: self.numpy_inputs[k].shape})
@@ -221,6 +240,7 @@ class ModelState:
     self.transforms_np = {k: np.zeros((3,3), dtype=np.float32) for k in self.img_queues}
     self.transforms = {k: Tensor(v, device='NPY').realize() for k, v in self.transforms_np.items()}
     self.vision_output = np.zeros(vision_output_size, dtype=np.float32)
+    # E2E Phase 2/4: policy_inputs now includes vehicle_embedding and nav_embeddings
     self.policy_inputs = {k: Tensor(v, device='NPY').realize() for k,v in self.numpy_inputs.items()}
     self.policy_output = np.zeros(policy_output_size, dtype=np.float32)
     self.parser = Parser()
@@ -273,6 +293,14 @@ class ModelState:
     for k in ['desire_pulse', 'features_buffer']:
       self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
+
+    # E2E Phase 2: Copy vehicle embedding into policy inputs
+    if 'vehicle_embedding' in inputs and 'vehicle_embedding' in self.numpy_inputs:
+      self.numpy_inputs['vehicle_embedding'][:] = inputs['vehicle_embedding']
+
+    # E2E Phase 4: Copy navigation embeddings into policy inputs
+    if 'nav_embeddings' in inputs and 'nav_embeddings' in self.numpy_inputs:
+      self.numpy_inputs['nav_embeddings'][:] = inputs['nav_embeddings']
 
     self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))

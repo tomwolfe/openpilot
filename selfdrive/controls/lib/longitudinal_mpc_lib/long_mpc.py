@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+"""
+DEPRECATED: Longitudinal MPC Controller
+
+E2E Phase 1: This module is deprecated in favor of direct E2E actuation.
+The E2E model now outputs direct acceleration commands (gas_pred, brake_pred)
+which are applied directly to the actuators via LongControl (E2E controller).
+
+This MPC controller is no longer used in the production control loop.
+It is preserved for:
+- Historical reference
+- Test compatibility (with deprecation warnings)
+- Potential future research comparisons
+
+New development should focus on improving the E2E model architecture and training.
+"""
+import warnings
 import os
 import time
 import numpy as np
@@ -9,6 +25,15 @@ from openpilot.common.swaglog import cloudlog
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import index_function
 from openpilot.selfdrive.controls.radard import _LEAD_ACCEL_TAU
+
+# Emit deprecation warning on import
+warnings.warn(
+  "long_mpc.py is deprecated. E2E Phase 1: Use direct E2E actuation instead. "
+  "The MPC controller is no longer used in production. "
+  "Import T_IDXS from selfdrive.controls.lib.drive_helpers if needed for tests.",
+  DeprecationWarning,
+  stacklevel=2
+)
 
 if __name__ == '__main__':  # generating code
   from openpilot.third_party.acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver

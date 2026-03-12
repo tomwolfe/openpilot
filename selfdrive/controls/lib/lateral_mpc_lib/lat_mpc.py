@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+"""
+DEPRECATED: Lateral MPC Controller
+
+E2E Phase 1: This module is deprecated in favor of direct E2E actuation.
+The E2E model now outputs direct steering commands (steer_torque_pred, steer_angle_pred)
+which are applied directly to the actuators via LatControl (E2E controller).
+
+This MPC controller is no longer used in the production control loop.
+It is preserved for:
+- Historical reference
+- Test compatibility (with deprecation warnings)
+- Potential future research comparisons
+
+New development should focus on improving the E2E model architecture and training.
+"""
+import warnings
 import os
 import time
 import numpy as np
@@ -6,6 +22,15 @@ import numpy as np
 from casadi import SX, vertcat, sin, cos
 # WARNING: imports outside of constants will not trigger a rebuild
 from openpilot.selfdrive.modeld.constants import ModelConstants
+
+# Emit deprecation warning on import
+warnings.warn(
+  "lat_mpc.py is deprecated. E2E Phase 1: Use direct E2E actuation instead. "
+  "The MPC controller is no longer used in production. "
+  "Import LAT_MPC_N from selfdrive.controls.lib.drive_helpers if needed for tests.",
+  DeprecationWarning,
+  stacklevel=2
+)
 
 if __name__ == '__main__':  # generating code
   from openpilot.third_party.acados.acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
