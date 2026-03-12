@@ -246,10 +246,17 @@ class ModelState:
     self.vision_output = self.vision_run(**vision_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
     vision_outputs_dict = self.parser.parse_vision_outputs(self.slice_outputs(self.vision_output, self.vision_output_slices))
 
-    self.full_input_queues.enqueue({'features_buffer': vision_outputs_dict['hidden_state'], 'desire_pulse': new_desire})
+    # Step 4: Append vehicle embedding to recurrent state (hidden_state)
+    vehicle_embedding = inputs['vehicle_embedding']
+    ve_reshaped = vehicle_embedding.reshape((1, -1))
+    recurrent_state = np.concatenate([vision_outputs_dict['hidden_state'], ve_reshaped], axis=-1)
+
+    self.full_input_queues.enqueue({'features_buffer': recurrent_state, 'desire_pulse': new_desire})
     for k in ['desire_pulse', 'features_buffer']:
       self.numpy_inputs[k][:] = self.full_input_queues.get(k)[k]
     self.numpy_inputs['traffic_convention'][:] = inputs['traffic_convention']
+    if 'vehicle_embedding' in self.numpy_inputs:
+      self.numpy_inputs['vehicle_embedding'][:] = vehicle_embedding
 
     self.policy_output = self.policy_run(**self.policy_inputs).contiguous().realize().uop.base.buffer.numpy().flatten()
     policy_outputs_dict = self.parser.parse_policy_outputs(self.slice_outputs(self.policy_output, self.policy_output_slices))
