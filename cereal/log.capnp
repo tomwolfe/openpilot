@@ -867,12 +867,17 @@ struct ControlsState @0x97ff69c53601abf1 {
   curvature @37 :Float32;  # path curvature from vehicle model
   desiredCurvature @61 :Float32;  # lag adjusted curvatures used by lateral controllers
   forceDecel @51 :Bool;
+  
+  # E2E Phase 2: Direct actuation state
+  e2EEnabled @62 :Bool;
+  aebActive @63 :Bool;
 
   lateralControlState :union {
     pidState @53 :LateralPIDState;
     angleState @58 :LateralAngleState;
     debugState @59 :LateralDebugState;
     torqueState @60 :LateralTorqueState;
+    e2EState @64 :LateralE2EState;
 
     curvatureStateDEPRECATED @65 :LateralCurvatureState;
     lqrStateDEPRECATED @55 :LateralLQRState;
@@ -959,6 +964,14 @@ struct ControlsState @0x97ff69c53601abf1 {
     steeringAngleDeg @1 :Float32;
     output @2 :Float32;
     saturated @3 :Bool;
+  }
+
+  struct LateralE2EState {
+    active @0 :Bool;
+    version @1 :Int32;
+    steeringAngleDesiredDeg @2 :Float32;
+    outputTorque @3 :Float32;
+    saturated @4 :Bool;
   }
 
   # deprecated
@@ -1189,6 +1202,14 @@ struct ModelDataV2 {
     desiredCurvature @0 :Float32;
     desiredAcceleration @1 :Float32;
     shouldStop @2 :Bool;
+    
+    # E2E Phase 2: Direct actuator predictions
+    steerTorquePred @3 :Float32;    # Steering torque prediction [-1, 1]
+    steerAnglePred @4 :Float32;     # Steering angle prediction in radians
+    gasPred @5 :Float32;            # Gas pedal prediction [0, 1]
+    brakePred @6 :Float32;          # Brake pedal prediction [0, 1]
+    crashProb @7 :Float32;          # Crash probability for AEB [0, 1]
+    ttcPred @8 :Float32;            # Time to collision prediction in seconds
   }
 
   # Policy hypothesis for multi-path trajectory prediction (Phase 1 E2E 1.0)

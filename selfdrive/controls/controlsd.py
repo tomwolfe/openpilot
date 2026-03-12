@@ -16,7 +16,9 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
+from openpilot.selfdrive.controls.lib.latcontrol_e2e import LatControlE2E
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.controls.lib.longcontrol_e2e import LongControlE2E
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
@@ -48,15 +50,23 @@ class Controls:
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
 
-    self.LoC = LongControl(self.CP)
-    self.VM = VehicleModel(self.CP)
-    self.LaC: LatControl
-    if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
-      self.LaC = LatControlAngle(self.CP, self.CI, DT_CTRL)
-    elif self.CP.lateralTuning.which() == 'pid':
-      self.LaC = LatControlPID(self.CP, self.CI, DT_CTRL)
-    elif self.CP.lateralTuning.which() == 'torque':
-      self.LaC = LatControlTorque(self.CP, self.CI, DT_CTRL)
+    # E2E Phase 2: Check if E2E direct actuation mode is enabled
+    self.e2e_enabled = self.params.get_bool("E2E_Enabled")
+    
+    if self.e2e_enabled:
+      cloudlog.info("E2E Phase 2: Direct actuation mode enabled")
+      self.LoC = LongControlE2E(self.CP)
+      self.LaC = LatControlE2E(self.CP, self.CI, DT_CTRL)
+    else:
+      cloudlog.info("Classical control mode (PID/MPC)")
+      self.LoC = LongControl(self.CP)
+      self.VM = VehicleModel(self.CP)
+      if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
+        self.LaC = LatControlAngle(self.CP, self.CI, DT_CTRL)
+      elif self.CP.lateralTuning.which() == 'pid':
+        self.LaC = LatControlPID(self.CP, self.CI, DT_CTRL)
+      elif self.CP.lateralTuning.which() == 'torque':
+        self.LaC = LatControlTorque(self.CP, self.CI, DT_CTRL)
 
   def update(self):
     self.sm.update(15)
@@ -69,21 +79,22 @@ class Controls:
   def state_control(self):
     CS = self.sm['carState']
 
-    # Update VehicleModel
-    lp = self.sm['liveParameters']
-    x = max(lp.stiffnessFactor, 0.1)
-    sr = max(lp.steerRatio, 0.1)
-    self.VM.update_params(x, sr)
+    # Update VehicleModel (only needed for classical control)
+    if not self.e2e_enabled:
+      lp = self.sm['liveParameters']
+      x = max(lp.stiffnessFactor, 0.1)
+      sr = max(lp.steerRatio, 0.1)
+      self.VM.update_params(x, sr)
 
-    steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
-    self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
+      steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
+      self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
 
-    # Update Torque Params
-    if self.CP.lateralTuning.which() == 'torque':
-      torque_params = self.sm['liveTorqueParameters']
-      if self.sm.all_checks(['liveTorqueParameters']) and torque_params.useParams:
-        self.LaC.update_live_torque_params(torque_params.latAccelFactorFiltered, torque_params.latAccelOffsetFiltered,
-                                           torque_params.frictionCoefficientFiltered)
+      # Update Torque Params
+      if self.CP.lateralTuning.which() == 'torque':
+        torque_params = self.sm['liveTorqueParameters']
+        if self.sm.all_checks(['liveTorqueParameters']) and torque_params.useParams:
+          self.LaC.update_live_torque_params(torque_params.latAccelFactorFiltered, torque_params.latAccelOffsetFiltered,
+                                             torque_params.frictionCoefficientFiltered)
 
     long_plan = self.sm['longitudinalPlan']
     model_v2 = self.sm['modelV2']
@@ -110,22 +121,56 @@ class Controls:
     if not CC.longActive:
       self.LoC.reset()
 
-    # accel PID loop
+    # E2E Phase 2: Extract model actuator predictions
+    model_actuator_output = {
+      'steer_torque_pred': model_v2.action.steerTorquePred,
+      'steer_angle_pred': model_v2.action.steerAnglePred,
+      'gas_pred': model_v2.action.gasPred,
+      'brake_pred': model_v2.action.brakePred,
+      'crash_prob': model_v2.action.crashProb,
+      'ttc_pred': model_v2.action.ttcPred,
+    }
+    
+    # E2E AEB: Check for imminent collision and prepare override
+    aeb_override = None
+    if model_actuator_output['crash_prob'] > 0.7 or (model_actuator_output['ttc_pred'] > 0 and model_actuator_output['ttc_pred'] < 1.5):
+      # Imminent collision detected - apply maximum braking
+      aeb_override = -4.0  # Maximum braking acceleration (m/s^2)
+
+    # accel control (E2E or classical)
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    
+    if self.e2e_enabled:
+      # E2E Phase 2: Direct actuation
+      actuators.accel = float(self.LoC.update(CC.longActive, CS, model_actuator_output, pid_accel_limits, aeb_override))
+    else:
+      # Classical: accel PID loop
+      actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
 
-    # Steering PID loop and lateral MPC
-    # Reset desired curvature to current to avoid violating the limits on engage
-    new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-    self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
-    lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+    # Steering control (E2E or classical)
+    if self.e2e_enabled:
+      # E2E Phase 2: Direct actuation
+      lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
+      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM if hasattr(self, 'VM') else None,
+                                                         self.sm['liveParameters'] if not self.e2e_enabled else None,
+                                                         self.steer_limited_by_safety, 0.0, False, lat_delay,
+                                                         model_actuator_output)
+      actuators.torque = float(steer)
+      actuators.steeringAngleDeg = float(steeringAngleDeg)
+    else:
+      # Classical: Steering PID loop and lateral MPC
+      # Reset desired curvature to current to avoid violating the limits on engage
+      new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+      self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, self.sm['liveParameters'].roll)
+      lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
-    actuators.curvature = self.desired_curvature
-    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                       self.steer_limited_by_safety, self.desired_curvature,
-                                                       curvature_limited, lat_delay)
-    actuators.torque = float(steer)
-    actuators.steeringAngleDeg = float(steeringAngleDeg)
+      actuators.curvature = self.desired_curvature
+      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, self.sm['liveParameters'],
+                                                         self.steer_limited_by_safety, self.desired_curvature,
+                                                         curvature_limited, lat_delay)
+      actuators.torque = float(steer)
+      actuators.steeringAngleDeg = float(steeringAngleDeg)
+    
     # Ensure no NaNs/Infs
     for p in ACTUATOR_FIELDS:
       attr = getattr(actuators, p)
@@ -187,14 +232,32 @@ class Controls:
     cs.lateralPlanMonoTime = self.sm.logMonoTime['modelV2']
     cs.desiredCurvature = self.desired_curvature
     cs.longControlState = self.LoC.long_control_state
-    cs.upAccelCmd = float(self.LoC.pid.p)
-    cs.uiAccelCmd = float(self.LoC.pid.i)
-    cs.ufAccelCmd = float(self.LoC.pid.f)
+    
+    # E2E Phase 2: Log E2E-specific state
+    if self.e2e_enabled:
+      cs.e2EEnabled = True
+      cs.aebActive = self.LoC.get_aeb_status() if hasattr(self.LoC, 'get_aeb_status') else False
+      # E2E controllers don't use PID, so set to 0
+      cs.upAccelCmd = 0.0
+      cs.uiAccelCmd = 0.0
+      cs.ufAccelCmd = 0.0
+    else:
+      cs.e2EEnabled = False
+      cs.aebActive = False
+      cs.upAccelCmd = float(self.LoC.pid.p)
+      cs.uiAccelCmd = float(self.LoC.pid.i)
+      cs.ufAccelCmd = float(self.LoC.pid.f)
+    
     cs.forceDecel = bool((self.sm['driverMonitoringState'].awarenessStatus < 0.) or
                          (self.sm['selfdriveState'].state == State.softDisabling))
 
-    lat_tuning = self.CP.lateralTuning.which()
-    if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
+    # Determine lateral tuning type for logging
+    lat_tuning = self.CP.lateralTuning.which() if not self.e2e_enabled else 'e2e'
+    
+    if self.e2e_enabled:
+      # E2E lateral control state
+      cs.lateralControlState.e2EState = lac_log
+    elif self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       cs.lateralControlState.angleState = lac_log
     elif lat_tuning == 'pid':
       cs.lateralControlState.pidState = lac_log

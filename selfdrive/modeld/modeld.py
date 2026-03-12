@@ -39,7 +39,8 @@ from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, 
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import read_file_chunked
-from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
+from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, E2EActuator
+from openpilot.selfdrive.modeld.vehicle_conditioning import VehicleConditioning
 
 
 PROCESS_NAME = "selfdrive.modeld.modeld"
@@ -78,9 +79,23 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     else:
       desired_curvature = prev_action.desiredCurvature
 
+    # E2E Phase 2: Extract direct actuator predictions if available
+    steer_torque_pred = float(model_output.get('steer_torque_pred', [[0.0]])[0, 0])
+    steer_angle_pred = float(model_output.get('steer_angle_pred', [[0.0]])[0, 0])
+    gas_pred = float(model_output.get('gas_pred', [[0.0]])[0, 0])
+    brake_pred = float(model_output.get('brake_pred', [[0.0]])[0, 0])
+    crash_prob = float(model_output.get('crash_prob', [[0.0]])[0, 0])
+    ttc_pred = float(model_output.get('ttc_pred', [[0.0]])[0, 0])
+
     return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                   desiredAcceleration=float(desired_accel),
-                                  shouldStop=bool(should_stop))
+                                  shouldStop=bool(should_stop),
+                                  steerTorquePred=steer_torque_pred,
+                                  steerAnglePred=steer_angle_pred,
+                                  gasPred=gas_pred,
+                                  brakePred=brake_pred,
+                                  crashProb=crash_prob,
+                                  ttcPred=ttc_pred)
 
 class FrameMeta:
   frame_id: int = 0
@@ -309,6 +324,10 @@ def main(demo=False):
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("modeld got CarParams: %s", CP.brand)
 
+  # E2E Phase 2: Initialize vehicle conditioning for model input
+  VC = VehicleConditioning(CP)
+  cloudlog.info("E2E Phase 2: Vehicle conditioning initialized")
+
   # TODO this needs more thought, use .2s extra for now to estimate other delays
   # TODO Move smooth seconds to action function
   long_delay = CP.longitudinalActuatorDelay + LONG_SMOOTH_SECONDS
@@ -387,6 +406,8 @@ def main(demo=False):
     inputs:dict[str, np.ndarray] = {
       'desire_pulse': vec_desire,
       'traffic_convention': traffic_convention,
+      # E2E Phase 2: Add vehicle conditioning embedding
+      'vehicle_embedding': VC.get_embedding(),
     }
 
     mt1 = time.perf_counter()

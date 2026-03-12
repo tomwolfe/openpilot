@@ -74,6 +74,16 @@ class Plan:
   T_FROM_CURRENT_EULER = slice(9, 12)
   ORIENTATION_RATE = slice(12, 15)
 
+# E2E Phase 2: Direct actuator output slices
+# These outputs represent the model's direct predictions for vehicle control
+class E2EActuator:
+  STEER_TORQUE = slice(0, 1)      # Steering torque [-1, 1]
+  STEER_ANGLE = slice(1, 2)       # Steering angle in radians
+  GAS = slice(2, 3)               # Gas pedal position [0, 1]
+  BRAKE = slice(3, 4)             # Brake pedal position [0, 1]
+  CRASH_PROB = slice(4, 5)        # Crash probability for AEB [0, 1]
+  TTC = slice(5, 6)               # Time to collision in seconds
+
 class Meta:
   ENGAGED = slice(0, 1)
   # next 2, 4, 6, 8, 10 seconds

@@ -36,6 +36,9 @@ class SimulatedCar:
 
     This state is read by the standard card process through the
     simulator CarInterface.
+    
+    E2E Phase 2: Now supports direct actuation commands (user_gas, user_brake, user_torque)
+    which are applied directly to the physics engine without PID conversion.
     """
     try:
       if not simulator_state.valid:
@@ -44,6 +47,13 @@ class SimulatedCar:
       # Convert simulator state to CarState format
       speed = simulator_state.speed  # m/s
       steering_angle_rad = simulator_state.steering_angle * 0.02  # Convert to radians
+
+      # E2E Phase 2: Read direct actuation commands from openpilot
+      # These are set by the CarInterface.apply() method
+      user_gas = getattr(simulator_state, 'user_gas', 0.0)
+      user_brake = getattr(simulator_state, 'user_brake', 0.0)
+      user_torque = getattr(simulator_state, 'user_torque', 0.0)
+      aeb_active = getattr(simulator_state, 'aeb_active', False)
 
       # Update shared simulator state
       self.simulator_state.update(
@@ -54,16 +64,17 @@ class SimulatedCar:
         steering_rate=0.0,
         yaw_rate=0.0,
 
-        gas=simulator_state.user_gas,
-        brake=simulator_state.user_brake,
-        brake_pressed=simulator_state.user_brake > 0,
-        gas_pressed=simulator_state.user_gas > 0,
+        # E2E Phase 2: Pass through direct actuation commands
+        gas=user_gas,
+        brake=user_brake,
+        brake_pressed=user_brake > 0 or aeb_active,
+        gas_pressed=user_gas > 0,
+        steer_torque_sensor=user_torque,
 
         cruise_available=True,
         cruise_enabled=simulator_state.is_engaged,
         cruise_set_speed=0.0,  # Set by controls
 
-        steer_torque_sensor=simulator_state.user_torque,
         steer_torque_driver=0.0,
         steer_fault=False,
         steer_warning=False,

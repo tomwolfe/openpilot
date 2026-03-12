@@ -63,6 +63,12 @@ class SimulatorCarState:
     self.steer_torque_driver = 0.0
     self.steer_fault = False
     self.steer_warning = False
+    
+    # E2E Phase 2: Direct actuation commands from openpilot
+    self.user_torque = 0.0  # Steering torque command [-1, 1]
+    self.user_gas = 0.0     # Gas pedal command [0, 1]
+    self.user_brake = 0.0   # Brake pedal command [0, 1]
+    self.aeb_active = False # AEB override flag
 
     # Lights
     self.left_blinker = False
@@ -125,6 +131,13 @@ class SimulatorCarState:
       CS.steeringTorqueEps = self.steer_torque_driver
       CS.steerFaultPermanent = self.steer_fault
       CS.steerWarning = self.steer_warning
+      
+      # E2E Phase 2: Expose direct actuation commands
+      # These are used by the simulator physics engine
+      CS.userTorque = self.user_torque
+      CS.userGas = self.user_gas
+      CS.userBrake = self.user_brake
+      CS.aebActive = self.aeb_active
 
       CS.leftBlinker = self.left_blinker
       CS.rightBlinker = self.right_blinker
@@ -234,16 +247,39 @@ class CarInterface(CarInterfaceBase):
     Apply car control commands.
 
     In simulation, we send control commands back to the simulator world
-    via the shared state rather than actual CAN messages.
+    via the shared state. Supports both classical control (accel/torque)
+    and E2E Phase 2 direct actuation (user_gas/user_brake/user_torque).
     """
     actuators = CC.actuators
 
-    # Send control commands to simulator
-    # The simulator world reads these from the shared state
-    self.simulator_state.update(
-      cruise_enabled=CC.cruiseControl.enabled,
-      cruise_set_speed=CC.cruiseControl.speedOverride if CC.cruiseControl.speedOverride is not None else 0.0,
-    )
+    # E2E Phase 2: Check if direct actuation is being used
+    # The simulator reads these commands directly for physics simulation
+    is_e2e = hasattr(actuators, 'e2eEnabled') and actuators.e2eEnabled
+    
+    if is_e2e:
+      # E2E direct actuation mode
+      # Send raw actuator commands to simulator
+      self.simulator_state.update(
+        user_torque=actuators.torque,
+        user_gas=max(0.0, actuators.accel / 2.0) if actuators.accel > 0 else 0.0,
+        user_brake=max(0.0, -actuators.accel / 4.0) if actuators.accel < 0 else 0.0,
+        aeb_active=actuators.longControlState == car.CarControl.Actuators.LongControlState.off and actuators.accel < -3.0,
+        cruise_enabled=CC.cruiseControl.enabled,
+      )
+    else:
+      # Classical control mode
+      # Convert accel/curvature to pedal/torque commands for simulator
+      gas_cmd = max(0.0, actuators.accel / 2.0) if actuators.accel > 0 else 0.0
+      brake_cmd = max(0.0, -actuators.accel / 4.0) if actuators.accel < 0 else 0.0
+      
+      self.simulator_state.update(
+        user_torque=actuators.torque,
+        user_gas=gas_cmd,
+        user_brake=brake_cmd,
+        aeb_active=False,
+        cruise_enabled=CC.cruiseControl.enabled,
+        cruise_set_speed=CC.cruiseControl.speedOverride if CC.cruiseControl.speedOverride is not None else 0.0,
+      )
 
     # Generate fake CAN messages for compatibility (optional)
     can_sends = []
