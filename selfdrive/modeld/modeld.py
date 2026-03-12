@@ -83,6 +83,11 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     crash_prob = float(model_output.get('crash_prob', [[0.0]])[0, 0])
     ttc_pred = float(model_output.get('ttc_pred', [[0.0]])[0, 0])
 
+    # E2E Phase 3: Calculate aebImminent flag
+    # AEB is imminent when crash probability is high OR time-to-collision is critically low
+    # These thresholds match the AEB logic in controlsd.py
+    aeb_imminent = (crash_prob > 0.7) or (ttc_pred > 0 and ttc_pred < 1.5)
+
     # Trajectory-based targets for logging/debugging (not used for control)
     # Extract from plan with smoothing
     if len(ModelConstants.T_IDXS) == len(plan[:,Plan.VELOCITY][:,0]):
@@ -111,7 +116,8 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
                                   gasPred=gas_pred,
                                   brakePred=brake_pred,
                                   crashProb=crash_prob,
-                                  ttcPred=ttc_pred)
+                                  ttcPred=ttc_pred,
+                                  aebImminent=aeb_imminent)
 
 class FrameMeta:
   frame_id: int = 0
@@ -315,7 +321,7 @@ def main(demo=False):
 
   # messaging
   pm = PubMaster(["modelV2", "drivingModelData", "cameraOdometry"])
-  sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay"])
+  sm = SubMaster(["deviceState", "carState", "roadCameraState", "liveCalibration", "driverMonitoringState", "carControl", "liveDelay", "navEmbeddings"])
 
   publish_state = PublishState()
   params = Params()
@@ -404,6 +410,11 @@ def main(demo=False):
     if desire >= 0 and desire < ModelConstants.DESIRE_LEN:
       vec_desire[desire] = 1
 
+    # E2E Phase 4: Get navigation embeddings
+    nav_embeddings = np.zeros(64, dtype=np.float32)  # Default embedding size
+    if sm.updated['navEmbeddings'] and sm.valid['navEmbeddings']:
+      nav_embeddings = np.array(sm['navEmbeddings'], dtype=np.float32)
+
     # tracked dropped frames
     vipc_dropped_frames = max(0, meta_main.frame_id - last_vipc_frame_id - 1)
     frames_dropped = frame_dropped_filter.update(min(vipc_dropped_frames, 10))
@@ -424,6 +435,8 @@ def main(demo=False):
       'traffic_convention': traffic_convention,
       # E2E Phase 2: Add vehicle conditioning embedding
       'vehicle_embedding': VC.get_embedding(),
+      # E2E Phase 4: Add navigation embeddings
+      'nav_embeddings': nav_embeddings,
     }
 
     mt1 = time.perf_counter()
@@ -440,7 +453,8 @@ def main(demo=False):
       prev_action = action
       fill_model_msg(drivingdata_send, modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
-                     frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
+                     frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen,
+                     nav_embeddings)
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]

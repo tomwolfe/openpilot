@@ -90,9 +90,11 @@ class Controls:
       'ttc_pred': model_v2.action.ttcPred,
     }
 
-    # AEB: Check for imminent collision and prepare override
+    # E2E Phase 3: AEB - Use explicit aebImminent flag from model
+    # The model outputs aebImminent when it detects an imminent collision
+    # This bypasses comfort deceleration limits for maximum braking
     aeb_override = None
-    if model_actuator_output['crash_prob'] > 0.7 or (model_actuator_output['ttc_pred'] > 0 and model_actuator_output['ttc_pred'] < 1.5):
+    if model_v2.action.aebImminent:
       # Imminent collision detected - apply maximum braking
       aeb_override = -4.0  # Maximum braking acceleration (m/s^2)
 

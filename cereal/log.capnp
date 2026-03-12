@@ -1111,6 +1111,10 @@ struct ModelDataV2 {
   # multi-hypothesis policy output (Phase 1 E2E 1.0)
   policy @27 :List(PolicyHypothesis);
 
+  # E2E Phase 4: Navigation embeddings for semantic routing
+  # Continuous tensor representing route intent (lane choices, exits, turns)
+  navEmbeddings @28 :List(Float32);
+
   gpuExecutionTimeDEPRECATED @17 :Float32;
   navEnabledDEPRECATED @22 :Bool;
   locationMonoTimeDEPRECATED @24 :UInt64;
@@ -1202,7 +1206,7 @@ struct ModelDataV2 {
     desiredCurvature @0 :Float32;
     desiredAcceleration @1 :Float32;
     shouldStop @2 :Bool;
-    
+
     # E2E Phase 2: Direct actuator predictions
     steerTorquePred @3 :Float32;    # Steering torque prediction [-1, 1]
     steerAnglePred @4 :Float32;     # Steering angle prediction in radians
@@ -1210,6 +1214,7 @@ struct ModelDataV2 {
     brakePred @6 :Float32;          # Brake pedal prediction [0, 1]
     crashProb @7 :Float32;          # Crash probability for AEB [0, 1]
     ttcPred @8 :Float32;            # Time to collision prediction in seconds
+    aebImminent @9 :Bool;           # E2E Phase 3: Explicit AEB trigger flag
   }
 
   # Policy hypothesis for multi-path trajectory prediction (Phase 1 E2E 1.0)

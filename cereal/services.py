@@ -74,6 +74,7 @@ _services: dict[str, tuple] = {
   "wideRoadCameraState": (True, 20., 40),  # Increased decimation
   "drivingModelData": (True, 20., 20),  # Increased decimation - critical for E2E
   "modelV2": (True, 20., None, QueueSize.BIG),  # Keep full resolution for E2E model output
+  "navEmbeddings": (True, 20., 40),  # E2E Phase 4: Navigation embeddings for semantic routing
   "managerState": (True, 2., 2),  # Increased decimation
   "uploaderState": (True, 0., 1),
   "navInstruction": (True, 1., 20),  # Increased decimation
