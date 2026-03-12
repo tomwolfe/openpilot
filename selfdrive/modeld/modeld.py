@@ -78,9 +78,23 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     else:
       desired_curvature = prev_action.desiredCurvature
 
+    # Phase 2: Direct actuator extraction (0: steer_torque, 1: steer_angle, 2: gas, 3: brake)
+    steer_torque = float(model_output['actuator'][0, 0]) if 'actuator' in model_output else 0.0
+    steer_angle = float(model_output['actuator'][0, 1]) if 'actuator' in model_output else 0.0
+    gas = float(model_output['actuator'][0, 2]) if 'actuator' in model_output else 0.0
+    brake = float(model_output['actuator'][0, 3]) if 'actuator' in model_output else 0.0
+    
+    # E2E AEB prediction
+    crash_probability = float(model_output['crash_prob'][0]) if 'crash_prob' in model_output else 0.0
+
     return log.ModelDataV2.Action(desiredCurvature=float(desired_curvature),
                                   desiredAcceleration=float(desired_accel),
-                                  shouldStop=bool(should_stop))
+                                  shouldStop=bool(should_stop),
+                                  steerTorque=steer_torque,
+                                  steerAngle=steer_angle,
+                                  gas=gas,
+                                  brake=brake,
+                                  crashProbability=crash_probability)
 
 class FrameMeta:
   frame_id: int = 0
@@ -314,6 +328,9 @@ def main(demo=False):
   long_delay = CP.longitudinalActuatorDelay + LONG_SMOOTH_SECONDS
   prev_action = log.ModelDataV2.Action()
 
+  # Phase 2: Vehicle-agnostic conditioning (mass, wheelbase, steerRatio, centerToFrontRatio)
+  vehicle_embedding = np.array([CP.mass, CP.wheelbase, CP.steerRatio, CP.centerToFrontRatio], dtype=np.float32)
+
   DH = DesireHelper()
 
   while True:
@@ -387,6 +404,7 @@ def main(demo=False):
     inputs:dict[str, np.ndarray] = {
       'desire_pulse': vec_desire,
       'traffic_convention': traffic_convention,
+      'vehicle_embedding': vehicle_embedding,
     }
 
     mt1 = time.perf_counter()

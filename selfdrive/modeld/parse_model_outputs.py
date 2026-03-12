@@ -115,6 +115,13 @@ class Parser:
     self.parse_mdn('plan', outs, in_N=plan_in_N, out_N=plan_out_N, out_shape=(ModelConstants.IDX_N, ModelConstants.PLAN_WIDTH))
     if 'planplus' in outs:
       self.parse_mdn('planplus', outs, in_N=0, out_N=0, out_shape=(ModelConstants.IDX_N, ModelConstants.PLAN_WIDTH))
+    
+    # Phase 2 E2E direct actuator predictions
+    if 'actuator' in outs:
+      self.parse_mdn('actuator', outs, in_N=0, out_N=0, out_shape=(ModelConstants.ACTUATOR_WIDTH,))
+    if 'crash_prob' in outs:
+      self.parse_binary_crossentropy('crash_prob', outs)
+      
     self.parse_categorical_crossentropy('desire_state', outs, out_shape=(ModelConstants.DESIRE_PRED_WIDTH,))
     return outs
 

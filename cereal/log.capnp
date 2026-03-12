@@ -1189,6 +1189,11 @@ struct ModelDataV2 {
     desiredCurvature @0 :Float32;
     desiredAcceleration @1 :Float32;
     shouldStop @2 :Bool;
+    steerTorque @3 :Float32;
+    steerAngle @4 :Float32;
+    gas @5 :Float32;
+    brake @6 :Float32;
+    crashProbability @7 :Float32;
   }
 
   # Policy hypothesis for multi-path trajectory prediction (Phase 1 E2E 1.0)

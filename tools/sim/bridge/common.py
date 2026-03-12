@@ -177,9 +177,20 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
 
       if self.simulator_state.is_engaged:
-        throttle_op = np.clip(self.simulated_car.sm['carControl'].actuators.accel / 1.6, 0.0, 1.0)
-        brake_op = np.clip(-self.simulated_car.sm['carControl'].actuators.accel / 4.0, 0.0, 1.0)
-        steer_op = self.simulated_car.sm['carControl'].actuators.steeringAngleDeg
+        cc_actuators = self.simulated_car.sm['carControl'].actuators
+        
+        # Phase 2: Use direct gas/brake/torque if we are in experimental mode (E2E)
+        if self.simulated_car.sm['selfdriveState'].experimentalMode:
+          # Directly map E2E outputs to simulation physics
+          throttle_op = np.clip(cc_actuators.gas, 0.0, 1.0)
+          brake_op = np.clip(cc_actuators.brake, 0.0, 1.0)
+          # torque is mapped to steering angle in metadrive for now
+          steer_op = cc_actuators.steeringAngleDeg
+        else:
+          # Classical PID/MPC mapping
+          throttle_op = np.clip(cc_actuators.accel / 1.6, 0.0, 1.0)
+          brake_op = np.clip(-cc_actuators.accel / 4.0, 0.0, 1.0)
+          steer_op = cc_actuators.steeringAngleDeg
 
         self.past_startup_engaged = True
       elif not self.past_startup_engaged and self.simulated_car.sm['selfdriveState'].engageable:

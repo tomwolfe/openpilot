@@ -73,6 +73,11 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   driving_model_data.modelExecutionTime = model_execution_time
 
   driving_model_data.action = action
+  driving_model_data.action.steerTorque = action.steerTorque
+  driving_model_data.action.steerAngle = action.steerAngle
+  driving_model_data.action.gas = action.gas
+  driving_model_data.action.brake = action.brake
+  driving_model_data.action.crashProbability = action.crashProbability
 
   modelV2 = extended_msg.modelV2
   modelV2.frameId = vipc_frame_id
@@ -94,6 +99,11 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
 
   # action
   modelV2.action = action
+  modelV2.action.steerTorque = action.steerTorque
+  modelV2.action.steerAngle = action.steerAngle
+  modelV2.action.gas = action.gas
+  modelV2.action.brake = action.brake
+  modelV2.action.crashProbability = action.crashProbability
 
   # times at X_IDXS of edges and lines aren't used
   LINE_T_IDXS: list[float] = []

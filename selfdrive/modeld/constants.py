@@ -66,6 +66,10 @@ class ModelConstants:
 
   POLY_PATH_DEGREE = 4
 
+  # Phase 2 E2E: Direct Actuator Prediction
+  ACTUATOR_WIDTH = 4  # steer_torque, steer_angle, gas, brake
+  CRASH_PROB_WIDTH = 1
+
 # model outputs slices
 class Plan:
   POSITION = slice(0, 3)

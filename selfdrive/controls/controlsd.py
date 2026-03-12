@@ -16,7 +16,9 @@ from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
+from openpilot.selfdrive.controls.lib.latcontrol_e2e import LatControlE2E
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.controls.lib.longcontrol_e2e import LongControlE2E
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
@@ -49,7 +51,9 @@ class Controls:
     self.calibrated_pose: Pose | None = None
 
     self.LoC = LongControl(self.CP)
+    self.LoC_E2E = LongControlE2E(self.CP)
     self.VM = VehicleModel(self.CP)
+    self.LaC_E2E = LatControlE2E(self.CP, self.CI)
     self.LaC: LatControl
     if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
       self.LaC = LatControlAngle(self.CP, self.CI, DT_CTRL)
@@ -107,23 +111,44 @@ class Controls:
 
     if not CC.latActive:
       self.LaC.reset()
+      self.LaC_E2E.reset()
     if not CC.longActive:
       self.LoC.reset()
 
-    # accel PID loop
-    pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
-    actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+    experimental_mode = self.sm['selfdriveState'].experimentalMode
 
-    # Steering PID loop and lateral MPC
+    # accel PID loop or direct E2E control
+    pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
+    if experimental_mode:
+      actuators.accel = self.LoC_E2E.update(CC.longActive, CS, model_v2.action.gas, model_v2.action.brake)
+      actuators.gas = float(model_v2.action.gas)
+      actuators.brake = float(model_v2.action.brake)
+    else:
+      actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
+
+    # E2E AEB Logic
+    if model_v2.action.crashProbability > 0.5:
+      # Emergency braking override
+      actuators.accel = -3.5 # Maximum comfort braking, or more if safety allows
+      CC.hudControl.visualAlert = car.CarControl.HUDControl.VisualAlert.brakePressed # Indicate emergency braking
+
+    # Steering PID loop and lateral MPC or direct E2E control
     # Reset desired curvature to current to avoid violating the limits on engage
     new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
     actuators.curvature = self.desired_curvature
-    steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                       self.steer_limited_by_safety, self.desired_curvature,
-                                                       curvature_limited, lat_delay)
+    if experimental_mode:
+      steer, steeringAngleDeg, lac_log = self.LaC_E2E.update(CC.latActive, CS, self.VM, lp,
+                                                             self.steer_limited_by_safety, 
+                                                             model_v2.action.steerTorque,
+                                                             model_v2.action.steerAngle,
+                                                             curvature_limited, lat_delay)
+    else:
+      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
+                                                         self.steer_limited_by_safety, self.desired_curvature,
+                                                         curvature_limited, lat_delay)
     actuators.torque = float(steer)
     actuators.steeringAngleDeg = float(steeringAngleDeg)
     # Ensure no NaNs/Infs
