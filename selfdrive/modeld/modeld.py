@@ -53,7 +53,7 @@ POLICY_METADATA_PATH = Path(__file__).parent / 'models/driving_policy_metadata.p
 MODELS_DIR = Path(__file__).parent / 'models'
 
 LAT_SMOOTH_SECONDS = 0.0
-LONG_SMOOTH_SECONDS = 0.3
+LONG_SMOOTH_SECONDS = 0.3  # Classical mode smoothing - E2E controllers use their own filters
 MIN_LAT_CONTROL_SPEED = 0.3
 
 IMG_QUEUE_SHAPE = (6*(ModelConstants.MODEL_RUN_FREQ//ModelConstants.MODEL_CONTEXT_FREQ + 1), 128, 256)
@@ -62,7 +62,21 @@ assert IMG_QUEUE_SHAPE[0] == 30
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
                           lat_action_t: float, long_action_t: float, v_ego: float) -> log.ModelDataV2.Action:
+    """
+    Extract action predictions from model outputs.
+    
+    E2E Phase 2: Direct actuator predictions (steer_torque_pred, gas_pred, brake_pred)
+    are extracted and published. These are used directly by E2E controllers.
+    
+    Classical mode: Trajectory predictions (desiredCurvature, desiredAcceleration)
+    are extracted with smoothing for comfort. These are used by PID controllers.
+    
+    Both outputs are always published - the choice of which to use is made by controlsd.py
+    """
     plan = model_output['plan'][0]
+    
+    # Classical: Extract trajectory-based targets with smoothing for comfort
+    # E2E: These are still published for logging/debugging, but not used for control
     desired_accel, should_stop = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
                                                      plan[:,Plan.ACCELERATION][:,0],
                                                      ModelConstants.T_IDXS,
@@ -79,7 +93,10 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     else:
       desired_curvature = prev_action.desiredCurvature
 
-    # E2E Phase 2: Extract direct actuator predictions if available
+    # E2E Phase 2: Extract direct actuator predictions
+    # These are the primary control signals for E2E mode
+    # Model outputs are in range [-1, 1] for torque, [0, 1] for pedals
+    # E2E controllers apply their own minimal filtering
     steer_torque_pred = float(model_output.get('steer_torque_pred', [[0.0]])[0, 0])
     steer_angle_pred = float(model_output.get('steer_angle_pred', [[0.0]])[0, 0])
     gas_pred = float(model_output.get('gas_pred', [[0.0]])[0, 0])

@@ -46,19 +46,22 @@ class Controls:
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+    self.VM = None  # Only initialized for classical control
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
 
     # E2E Phase 2: Check if E2E direct actuation mode is enabled
     self.e2e_enabled = self.params.get_bool("E2E_Enabled")
-    
+
     if self.e2e_enabled:
       cloudlog.info("E2E Phase 2: Direct actuation mode enabled")
+      cloudlog.info("E2E: Neural network outputs direct actuator commands (pixels-to-actuation)")
       self.LoC = LongControlE2E(self.CP)
       self.LaC = LatControlE2E(self.CP, self.CI, DT_CTRL)
     else:
       cloudlog.info("Classical control mode (PID/MPC)")
+      cloudlog.info("Classical: Using PID controllers with comfort heuristics")
       self.LoC = LongControl(self.CP)
       self.VM = VehicleModel(self.CP)
       if self.CP.steerControlType == car.CarParams.SteerControlType.angle:
@@ -79,7 +82,8 @@ class Controls:
   def state_control(self):
     CS = self.sm['carState']
 
-    # Update VehicleModel (only needed for classical control)
+    # E2E Phase 2: No vehicle model needed - neural network learns vehicle dynamics implicitly
+    # Classical control path still uses VehicleModel for PID tuning
     if not self.e2e_enabled:
       lp = self.sm['liveParameters']
       x = max(lp.stiffnessFactor, 0.1)
@@ -89,7 +93,7 @@ class Controls:
       steer_angle_without_offset = math.radians(CS.steeringAngleDeg - lp.angleOffsetDeg)
       self.curvature = -self.VM.calc_curvature(steer_angle_without_offset, CS.vEgo, lp.roll)
 
-      # Update Torque Params
+      # Update Torque Params (classical only)
       if self.CP.lateralTuning.which() == 'torque':
         torque_params = self.sm['liveTorqueParameters']
         if self.sm.all_checks(['liveTorqueParameters']) and torque_params.useParams:
@@ -149,17 +153,17 @@ class Controls:
 
     # Steering control (E2E or classical)
     if self.e2e_enabled:
-      # E2E Phase 2: Direct actuation
+      # E2E Phase 2: Direct actuation - model outputs direct torque/angle commands
       lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
-      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM if hasattr(self, 'VM') else None,
-                                                         self.sm['liveParameters'] if not self.e2e_enabled else None,
+      steer, steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, None,
+                                                         None,
                                                          self.steer_limited_by_safety, 0.0, False, lat_delay,
                                                          model_actuator_output)
       actuators.torque = float(steer)
       actuators.steeringAngleDeg = float(steeringAngleDeg)
     else:
-      # Classical: Steering PID loop and lateral MPC
-      # Reset desired curvature to current to avoid violating the limits on engage
+      # Classical: Steering PID loop with curvature clipping (comfort heuristics)
+      # Note: This path will be deprecated in favor of pure E2E control
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
       self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, self.sm['liveParameters'].roll)
       lat_delay = self.sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
